@@ -1,0 +1,18 @@
+{
+    "name": "DOM SHOT",
+    "description": "Blow up some DOM elements now in 3d",
+    "version": "1.0",
+    "manifest_version": 3,
+    "content_security_policy": {
+        "sandbox": "sandbox allow-scripts; 'unsafe-inline' 'unsafe-eval'"
+    },
+    "content_scripts": [
+        {
+            "matches": ["*://*.ycombinator.com/*"],
+            "all_frames": false,
+            "js": ["./dist/main.bundle.js"],
+            "run_at": "document_end"
+        }
+    ],
+    "permissions": ["storage", "activeTab", "scripting"]
+}

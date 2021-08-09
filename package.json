@@ -1,0 +1,31 @@
+{
+    "name": "dom-shot",
+    "version": "1.0.0",
+    "description": "fly a ship and blow up some DOM elements",
+    "main": "content2.js",
+    "scripts": {
+        "dev": "webpack --watch --mode development",
+        "devp": "webpack --watch --mode production"
+    },
+    "author": "weston c. beecroft",
+    "license": "MIT",
+    "dependencies": {
+        "dom-to-image": "^2.6.0",
+        "dom-to-image-improved": "^2.8.0",
+        "regenerator-runtime": "^0.13.9",
+        "three": "^0.128.0",
+        "three-orbit-controls": "^82.1.0"
+    },
+    "devDependencies": {
+        "@babel/core": "^7.14.3",
+        "@babel/plugin-transform-runtime": "^7.14.3",
+        "@babel/preset-env": "^7.14.2",
+        "babel-loader": "^8.2.2",
+        "css-loader": "^5.2.4",
+        "html-webpack-plugin": "^5.3.1",
+        "style-loader": "^2.0.0",
+        "webpack": "^5.37.1",
+        "webpack-cli": "^4.7.0",
+        "webpack-dev-server": "^3.11.2"
+    }
+}
