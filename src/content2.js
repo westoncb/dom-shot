@@ -1,27 +1,47 @@
 import * as THREE from "three"
 var OrbitControls = require("three-orbit-controls")(THREE)
-import domtoimage from "dom-to-image-improved"
+import domtoimage from "./domToImage"
 import regeneratorRuntime from "regenerator-runtime"
+import { BoxBufferGeometry } from "three"
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js"
+import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js"
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js"
+import { SAOPass } from "three/examples/jsm/postprocessing/SAOPass.js"
+import { GUI } from "three/examples/jsm/libs/dat.gui.module"
 
 window.onload = program
+
+let aoOn = true
+let guiOn = false
+
+const gui = null
+if (guiOn) {
+    gui = new GUI()
+}
 
 function program() {
     const scene = new THREE.Scene()
     const camera = new THREE.PerspectiveCamera(
         75,
         window.innerWidth / window.innerHeight,
-        1,
-        10000
+        100,
+        8000
     )
-    camera.position.set(-100, 0, 800)
+    camera.position.set(0, 0, 800)
     camera.lookAt(0, 0, 0)
     scene.add(camera)
     const controls = new OrbitControls(camera)
     const raycaster = new THREE.Raycaster()
     const mouse = new THREE.Vector2()
 
-    const renderer = new THREE.WebGLRenderer()
-    renderer.setSize(window.innerWidth, window.innerHeight)
+    const renderer = new THREE.WebGLRenderer({
+        powerPreference: "high-performance",
+        antialias: true,
+        stencil: false,
+    })
+    const winWidth = window.innerWidth
+    const winHeight = window.innerHeight
+    renderer.setSize(winWidth, winHeight)
     renderer.domElement.id = "xyzthisiscrazy"
     renderer.domElement.style.zIndex = "99999"
     renderer.setClearColor("#cccccc")
@@ -32,18 +52,24 @@ function program() {
     directionalLight.target.position.set(0, 0, 0)
     directionalLight.target.updateMatrixWorld()
     scene.add(directionalLight)
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.1)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.2)
     scene.add(ambientLight)
 
-    const ele = renderer.domElement
-    ele.style.position = "absolute"
-    ele.style.left = "0"
-    ele.style.right = "0"
-    ele.style.bottom = "0"
-    ele.style.top = "0"
+    let composer
+    if (aoOn) {
+        composer = new EffectComposer(renderer)
+        setUpPostProcessing()
+    }
+
+    const webglCanvas = renderer.domElement
+    webglCanvas.style.position = "absolute"
+    webglCanvas.style.left = "0"
+    webglCanvas.style.right = "0"
+    webglCanvas.style.bottom = "0"
+    webglCanvas.style.top = "0"
 
     const docHeight = document.body.scrollHeight
-
+    const docWidth = document.body.scrollWidth
     console.log("docHeight", docHeight)
 
     const nodes = []
@@ -51,18 +77,19 @@ function program() {
 
     function node2AbstractCube(node) {
         const rect = node.getBoundingClientRect()
+        const treeDepth = getDepth(node, 1)
+        const ELEMENT_DEPTH = 10
 
         const props = {
             width: node.scrollWidth,
             height: node.scrollHeight,
-            depth: 10,
+            depth: ELEMENT_DEPTH,
             x: rect.x,
             y: docHeight - rect.y - node.scrollHeight,
-            z: getDepth(node, 0) * 10,
+            z: treeDepth * ELEMENT_DEPTH,
             node,
+            treeDepth,
         }
-
-        console.log(rect.y)
 
         return props
     }
@@ -71,20 +98,23 @@ function program() {
         const node = cube.node
         const tex = await getDOMTex(node)
 
-        const geometry = new THREE.BoxGeometry(
-            cube.width,
-            cube.height,
-            cube.depth
-        )
+        const geometry = new THREE.PlaneBufferGeometry(cube.width, cube.height)
         const material = new THREE.MeshPhysicalMaterial({
             color: 0xffffff,
-            metalness: 0.1,
-            roughness: 0.85,
-            clearcoat: 0.15,
+            metalness: 0.25,
+            roughness: 0.6,
+            clearcoat: 0.5,
             side: THREE.FrontSide,
             transparent: true,
-            opacity: 0.5,
+            depthTest: false,
         })
+        // the issues with elements disappearing at certain camera angles do seem related
+        // to depth testing, but setting depthTest: false is insufficient. May be necessary
+        // to manually sort objects, or at least ensure fully transparent objects are not
+        // getting added to the scene (they almost certainly currently are)
+        //
+        // The issue may also be relation to precision of depth buffer instead. craigslist.com
+        // shows some clear/interesting artifacts that may be useful for debugging this
 
         if (tex) {
             material.map = tex
@@ -93,13 +123,89 @@ function program() {
         }
 
         const mesh = new THREE.Mesh(geometry, material)
-        mesh.position.x = cube.x + cube.width / 2
-        mesh.position.y = cube.y + cube.height / 2
+        mesh.position.x = cube.x + cube.width / 2 - docWidth / 2
+        mesh.position.y = cube.y + cube.height / 2 - docHeight / 2
         mesh.position.z = cube.z + cube.depth / 2
 
-        mesh.userData.domNode = node
+        const sideOutline = [
+            [-cube.width / 2, -cube.height / 2],
+            [cube.width / 2, -cube.height / 2],
+            [cube.width / 2, cube.height / 2],
+            [-cube.width / 2, cube.height / 2],
+            [-cube.width / 2, -cube.height / 2],
+        ].map(p => new THREE.Vector2(p.x, p.y))
+        const sideGeometry = new THREE.BufferGeometry()
 
-        return mesh
+        const w = cube.width / 2
+        const h = cube.height / 2
+        const d = cube.depth / 2
+
+        // create a simple square shape. We duplicate the top left and bottom right
+        // vertices because each vertex needs to appear once per triangle.
+        const vertices = new Float32Array([
+            -w, // left side start
+            -h,
+            d,
+            -w,
+            h,
+            d,
+            -w,
+            -h,
+            -d,
+            -w,
+            -h,
+            -d,
+            -w,
+            h,
+            -d,
+            -w,
+            h,
+            d,
+            w, // right side start
+            -h,
+            d,
+            w,
+            h,
+            d,
+            w,
+            -h,
+            -d,
+            w,
+            -h,
+            -d,
+            w,
+            h,
+            -d,
+            w,
+            h,
+            d,
+        ])
+
+        // itemSize = 3 because there are 3 values (components) per vertex
+        sideGeometry.setAttribute(
+            "position",
+            new THREE.BufferAttribute(vertices, 3)
+        )
+        sideGeometry.computeVertexNormals()
+        const sideMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0x8899aa,
+            metalness: 0.3,
+            roughness: 0.85,
+            clearcoat: 0.15,
+            side: THREE.FrontSide,
+        })
+        // const altGeo = new BoxBufferGeometry(w * 2, h * 2, d * 2)
+        // altGeo.scale(1, 1, 0.9)
+        const sideMesh = new THREE.Mesh(sideGeometry, sideMaterial)
+        sideMesh.position.copy(mesh.position)
+        sideMesh.position.z -= cube.depth * 0.5
+
+        mesh.userData.domNode = node
+        sideMesh.userData.domNode = node
+        mesh.frustumCulled = false
+        sideMesh.frustumCulled = false
+
+        return { mesh, sideMesh }
     }
 
     async function getDOMTex(node) {
@@ -107,25 +213,13 @@ function program() {
             return null
         }
 
-        // const entries = node.childNodes.entries()
-
         const result = await domtoimage
             .toPixelData(node, {
                 filter: curNode => {
-                    let childIsNode = false
-                    for (const n of curNode.childNodes.values()) {
-                        if (n === node) {
-                            childIsNode = true
-                        }
-                    }
-                    // return (
-                    //     curNode === node ||
-                    //     childIsNode ||
-                    //     curNode.nodeType === Node.TEXT_NODE ||
-                    //     curNode.childNodes.length === 0 ||
-                    //     curNode.childNodes.length === 1
-                    // )
-                    return true //node.id !== "xyzthisiscrazy"
+                    return (
+                        curNode.id !== "xyzthisiscrazy" &&
+                        curNode.id !== "wcb_debug_panel"
+                    )
                 },
             })
             .then(function (pixels) {
@@ -135,6 +229,8 @@ function program() {
                     node.scrollHeight,
                     THREE.RGBAFormat
                 )
+                tex.minFilter = THREE.LinearFilter
+                tex.magFilter = THREE.LinearFilter
 
                 tex.flipY = true
 
@@ -145,25 +241,23 @@ function program() {
     }
 
     function passingNode(node) {
-        const valid = node.nodeType === Node.ELEMENT_NODE
+        const valid =
+            node.nodeType === Node.ELEMENT_NODE && node.id !== "xyzthisiscrazy"
 
         return valid
     }
 
-    function distToLeaf(node, dist) {
-        if (node.childNodes.length === 0) {
-            return dist
-        } else {
-            return distToLeaf(node)
-        }
-    }
-
-    const meshes = nodes
+    const cubeData = nodes
         .filter(passingNode)
         .map(node => node2AbstractCube(node))
-        .map(async cube => abstractCube2Mesh(cube))
+    cubeData.sort((a, b) => b.treeDepth - a.treeDepth)
+    const meshes = cubeData.map(async cube => abstractCube2Mesh(cube))
 
-    meshes.forEach(async mesh => scene.add(await mesh))
+    meshes.forEach(async meshPromise => {
+        const { mesh, sideMesh } = await meshPromise
+        scene.add(mesh)
+        // scene.add(sideMesh)
+    })
 
     document.getElementsByTagName("body")[0].style.overflow = "hidden"
 
@@ -191,18 +285,16 @@ function program() {
         render()
     }
 
-    const objMap = {}
-
+    // set up debug panel
     const deb = document.createElement("div")
     deb.style.position = "fixed"
     deb.style.left = "0"
     deb.style.top = "0"
     deb.style.width = "400px"
-    // deb.style.height = "500px"
     deb.style.backgroundColor = "rgba(0, 0, 0, 0.75)"
-    deb.style.zIndex = "100000"
+    deb.style.zIndex = "2"
     deb.style.wordBreak = "break-all"
-    deb.id = "deb123"
+    deb.id = "wcb_debug_panel"
     deb.style.padding = "1rem"
     deb.innerText = "test123"
     document.body.appendChild(deb)
@@ -210,12 +302,20 @@ function program() {
     function render() {
         camera.updateMatrixWorld()
 
-        // update the picking ray with the camera and mouse position
-        raycaster.setFromCamera(mouse, camera)
+        // raycaster.setFromCamera(mouse, camera)
+        // const intersects = raycaster.intersectObjects(scene.children)
+        // highlightHoveredObjects(intersects)
 
-        // calculate objects intersecting the picking ray
-        const intersects = raycaster.intersectObjects(scene.children)
+        if (aoOn) {
+            composer.render()
+        } else {
+            renderer.render(scene, camera)
+        }
+    }
 
+    const hoveredObjectsMap = {}
+
+    function highlightHoveredObjects(intersects) {
         if (intersects.length > 0) {
             const object = intersects[0].object
             deb.innerText =
@@ -223,29 +323,73 @@ function program() {
                     object.userData.domNode.getBoundingClientRect()
                 ) +
                 "\n\n" +
-                JSON.stringify(object.position)
+                JSON.stringify(object.position) +
+                "\n\n" +
+                JSON.stringify({
+                    id: object.userData.domNode.id,
+                    className: object.userData.domNode.className,
+                })
 
-            // objMap[object.id] = object.material.color.clone()
-            // object.material.color.set(0xff0000)
+            // Highlight hovered objects green
+            if (hoveredObjectsMap[object.id] === undefined) {
+                hoveredObjectsMap[object.id] = object.material.color.clone()
+                object.material.color.set(0x00ff00)
+            }
         }
 
-        // if (objMap) {
-        //     for (const [key, value] of Object.entries(objMap)) {
-        //         if (objMap[key]) {
-        //             const obj = scene.getObjectById(key)
-        //             if (obj) {
-        //                 obj.material.color = value
-        //                 objMap[key] = undefined
-        //             } else {
-        //                 console.log("no obj for key: ", key)
-        //             }
-        //         }
-        //     }
-        // } else {
-        //     console.log("not there")
-        // }
+        // Clear highlights on previously hovered objects
+        if (hoveredObjectsMap) {
+            for (const [key, value] of Object.entries(hoveredObjectsMap)) {
+                if (hoveredObjectsMap[key]) {
+                    const obj = scene.getObjectById(Number(key))
+                    if (
+                        obj &&
+                        !(intersects[0] && intersects[0].object === obj)
+                    ) {
+                        obj.material.color = value
+                        hoveredObjectsMap[key] = undefined
+                    } else if (!obj) {
+                        console.log("no obj for key: ", key)
+                    }
+                }
+            }
+        } else {
+            console.log("not there")
+        }
+    }
 
-        renderer.render(scene, camera)
+    function setUpPostProcessing() {
+        const renderPass = new RenderPass(scene, camera)
+        composer.addPass(renderPass)
+        const saoPass = new SAOPass(scene, camera, false, true)
+        composer.addPass(saoPass)
+        saoPass.params.saoScale = 289
+        saoPass.params.saoIntensity = 0.04
+        saoPass.params.saoKernelRadius = 16
+        saoPass.params.saoBlurRadius = 2.2
+        saoPass.params.saoStdDev = 2
+
+        if (guiOn) {
+            gui.add(saoPass.params, "output", {
+                Beauty: SAOPass.OUTPUT.Beauty,
+                "Beauty+SAO": SAOPass.OUTPUT.Default,
+                SAO: SAOPass.OUTPUT.SAO,
+                Depth: SAOPass.OUTPUT.Depth,
+                Normal: SAOPass.OUTPUT.Normal,
+            }).onChange(function (value) {
+                saoPass.params.output = parseInt(value)
+            })
+            gui.add(saoPass.params, "saoBias", -1, 1)
+            gui.add(saoPass.params, "saoIntensity", 0.01, 0.1)
+            gui.add(saoPass.params, "saoScale", 1, 300)
+            gui.add(saoPass.params, "saoKernelRadius", 10, 50)
+            gui.add(saoPass.params, "saoMinResolution", 0, 50)
+            gui.add(saoPass.params, "saoBlur")
+            gui.add(saoPass.params, "saoBlurRadius", 1, 20)
+            gui.add(saoPass.params, "saoBlurStdDev", 0.5, 15)
+            gui.add(saoPass.params, "saoBlurDepthCutoff", 0.0, 0.1)
+            document.getElementsByClassName("dg")[0].style.zIndex = "999999"
+        }
     }
 
     function onMouseMove(event) {
