@@ -33,7 +33,6 @@ async function program() {
     const mouse = new THREE.Vector2()
 
     const renderer = new THREE.WebGLRenderer({
-        powerPreference: "high-performance",
         antialias: true,
         stencil: false,
     })
@@ -84,7 +83,7 @@ async function program() {
     function node2AbstractCube(node) {
         const rect = node.getBoundingClientRect() // does this match the rect node-to-image is using?
         const treeDepth = getDepth(node, 1)
-        const ELEMENT_DEPTH = 10
+        const ELEMENT_DEPTH = 12
 
         const props = {
             width: node.scrollWidth,
@@ -110,6 +109,7 @@ async function program() {
             metalness: 0.15,
             roughness: 0.75,
             clearcoat: 0.5,
+            clearcoatRoughness: 0.4,
             side: THREE.FrontSide,
         })
         // the issues with elements disappearing at certain camera angles do seem related
@@ -210,10 +210,10 @@ async function program() {
             -d,
             w,
             -h,
-            -d,
+            d,
             w,
             -h,
-            d,
+            -d,
             -w, // top side start
             h,
             d,
@@ -228,10 +228,10 @@ async function program() {
             -d,
             w,
             h,
-            -d,
+            d,
             w,
             h,
-            d,
+            -d,
         ])
 
         // itemSize = 3 because there are 3 values (components) per vertex
@@ -242,10 +242,11 @@ async function program() {
 
         sideGeometry.computeVertexNormals()
         const sideMaterial = new THREE.MeshPhysicalMaterial({
-            color: 0x8899aa,
-            metalness: 0.5,
-            roughness: 0.5,
+            color: 0xddeeff,
+            metalness: 0.15,
+            roughness: 0.75,
             clearcoat: 0.5,
+            clearcoatRoughness: 0.4,
             side: THREE.DoubleSide,
         })
         // const altGeo = new BoxBufferGeometry(w * 2, h * 2, d * 2)
