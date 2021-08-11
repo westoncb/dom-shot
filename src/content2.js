@@ -1,6 +1,6 @@
 import * as THREE from "three"
 var OrbitControls = require("three-orbit-controls")(THREE)
-import domtoimage from "./domToImage2"
+import domtoimage from "dom-to-image-improved"
 import regeneratorRuntime from "regenerator-runtime"
 import { BoxBufferGeometry } from "three"
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js"

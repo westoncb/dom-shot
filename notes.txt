@@ -1,1 +1,9 @@
 Setting z-position of meshes needs to take into account zIndex of DOM element
+Fix tile edge coloring (maybe get calc a color summary from tile surface and use that)
+Loading screen
+
+For debugging: render the output of dom-to-image to a plain canvas so you can see what you're working with
+
+
+Note: we use a specific commit in dom-to-image-improved as a dependency because there is
+a fix we need that hasn't been published to NPM yet (related to not crashing when an img can't be loaded)
