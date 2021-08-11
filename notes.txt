@@ -1,0 +1,1 @@
+Setting z-position of meshes needs to take into account zIndex of DOM element

@@ -1,6 +1,4 @@
-/**
- * This is from: https://www.npmjs.com/package/dom-to-image
- */
+// Original code is from: https://github.com/mcklayin/dom-to-image-improved
 
 ;(function (global) {
     "use strict"
@@ -9,7 +7,6 @@
     var inliner = newInliner()
     var fontFaces = newFontFaces()
     var images = newImages()
-    const done = []
 
     // Default impl options
     var defaultOptions = {
@@ -17,6 +14,8 @@
         imagePlaceholder: undefined,
         // Default cache bust is false, it will use the cache
         cacheBust: false,
+        // Use (existing) authentication credentials for external URIs (CORS requests)
+        useCredentials: false,
     }
 
     var domtoimage = {
@@ -25,6 +24,7 @@
         toJpeg: toJpeg,
         toBlob: toBlob,
         toPixelData: toPixelData,
+        toCanvas: toCanvas,
         impl: {
             fontFaces: fontFaces,
             images: images,
@@ -34,7 +34,8 @@
         },
     }
 
-    if (typeof module !== "undefined") module.exports = domtoimage
+    if (typeof exports === "object" && typeof module === "object")
+        module.exports = domtoimage
     else global.domtoimage = domtoimage
 
     /**
@@ -47,7 +48,8 @@
      * @param {Number} options.height - height to be applied to node before rendering.
      * @param {Object} options.style - an object whose properties to be copied to node's style before rendering.
      * @param {Number} options.quality - a Number between 0 and 1 indicating image quality (applicable to JPEG only),
-                defaults to 1.0.
+     defaults to 1.0.
+     * @param {Number} options.scale - a Number multiplier to scale up the canvas before rendering to reduce fuzzy images, defaults to 1.0.
      * @param {String} options.imagePlaceholder - dataURL to use as a placeholder for failed images, default behaviour is to fail fast on images we can't fetch
      * @param {Boolean} options.cacheBust - set to true to cache bust by appending the time to the request url
      * @return {Promise} - A promise that is fulfilled with a SVG image data URL
@@ -72,7 +74,6 @@
 
         function applyOptions(clone) {
             if (options.bgcolor) clone.style.backgroundColor = options.bgcolor
-
             if (options.width) clone.style.width = options.width + "px"
             if (options.height) clone.style.height = options.height + "px"
 
@@ -130,6 +131,15 @@
         return draw(node, options || {}).then(util.canvasToBlob)
     }
 
+    /**
+     * @param {Node} node - The DOM Node object to render
+     * @param {Object} options - Rendering options, @see {@link toSvg}
+     * @return {Promise} - A promise that is fulfilled with a canvas object
+     * */
+    function toCanvas(node, options) {
+        return draw(node, options || {})
+    }
+
     function copyOptions(options) {
         // Copy options to impl options for use in impl
         if (typeof options.imagePlaceholder === "undefined") {
@@ -144,6 +154,13 @@
         } else {
             domtoimage.impl.options.cacheBust = options.cacheBust
         }
+
+        if (typeof options.useCredentials === "undefined") {
+            domtoimage.impl.options.useCredentials =
+                defaultOptions.useCredentials
+        } else {
+            domtoimage.impl.options.useCredentials = options.useCredentials
+        }
     }
 
     function draw(domNode, options) {
@@ -151,15 +168,45 @@
             .then(util.makeImage)
             .then(util.delay(100))
             .then(function (image) {
-                var canvas = newCanvas(domNode)
-                canvas.getContext("2d").drawImage(image, 0, 0)
+                var scale =
+                    typeof options.scale !== "number" ? 1 : options.scale
+                console.log("scale", scale)
+                var canvas = newCanvas(domNode, scale)
+                var ctx = canvas.getContext("2d")
+                if (image) {
+                    ctx.scale(scale, scale)
+
+                    if (options.canvas && options.canvas.width) {
+                        canvas.width = options.canvas.width
+                    }
+
+                    if (options.canvas && options.canvas.height) {
+                        canvas.height = options.canvas.height
+                    }
+
+                    if (options.canvas) {
+                        ctx.drawImage(
+                            image,
+                            options.canvas.sx || 0,
+                            options.canvas.sy || 0,
+                            options.canvas.sw || options.width,
+                            options.canvas.sh || options.height,
+                            options.canvas.dx || 0,
+                            options.canvas.dy || 0,
+                            options.canvas.dw || options.width,
+                            options.canvas.dh || options.height
+                        )
+                    } else {
+                        ctx.drawImage(image, 0, 0)
+                    }
+                }
                 return canvas
             })
 
-        function newCanvas(domNode) {
+        function newCanvas(domNode, scale) {
             var canvas = document.createElement("canvas")
-            canvas.width = options.width || util.width(domNode)
-            canvas.height = options.height || util.height(domNode)
+            canvas.width = (options.width || util.width(domNode)) * scale
+            canvas.height = (options.height || util.height(domNode)) * scale
 
             if (options.bgcolor) {
                 var ctx = canvas.getContext("2d")
@@ -190,13 +237,10 @@
         }
 
         function cloneChildren(original, clone, filter) {
-            var children = original.childNodes
-
-            // temporarily disable non-recursive rendering
-            // var children = Array.from(original.childNodes).filter(
-            //     node => !done.includes(node)
-            // )
-            // done.push(...children)
+            var children =
+                original.tagName === "use"
+                    ? copyShadowChild(original)
+                    : original.childNodes
             if (children.length === 0) return Promise.resolve(clone)
 
             return cloneChildrenInOrder(
@@ -222,6 +266,13 @@
             }
         }
 
+        function copyShadowChild(original) {
+            var child = document.getElementById(
+                original.href.baseVal.replace("#", "")
+            )
+            return [child.cloneNode(true)]
+        }
+
         function processClone(original, clone) {
             if (!(clone instanceof Element)) return clone
 
@@ -237,9 +288,28 @@
             function cloneStyle() {
                 copyStyle(window.getComputedStyle(original), clone.style)
 
+                if (
+                    (util.isChrome() || util.isSafari()) &&
+                    clone.style.marker &&
+                    (clone.tagName === "line" || clone.tagName === "path")
+                ) {
+                    clone.style.marker = ""
+                }
+
                 function copyStyle(source, target) {
-                    if (source.cssText) target.cssText = source.cssText
-                    else copyProperties(source, target)
+                    if (source.cssText) {
+                        target.cssText = source.cssText
+
+                        // Fix strange box-shadow in Safari
+                        if (util.isSafari()) {
+                            target.cssText = target.cssText.replace(
+                                /box-shadow(.*?);/,
+                                "box-shadow: none!important;"
+                            )
+                        }
+
+                        target.font = source.font // here, we re-assign the font prop.
+                    } else copyProperties(source, target)
 
                     function copyProperties(source, target) {
                         util.asArray(source).forEach(function (name) {
@@ -265,7 +335,14 @@
                     if (content === "" || content === "none") return
 
                     var className = util.uid()
-                    clone.className = clone.className + " " + className
+                    var currentClass = clone.getAttribute("class")
+                    if (currentClass) {
+                        clone.setAttribute(
+                            "class",
+                            currentClass + " " + className
+                        )
+                    }
+
                     var styleElement = document.createElement("style")
                     styleElement.appendChild(
                         formatPseudoElementStyle(className, element, style)
@@ -393,6 +470,8 @@
             uid: uid(),
             delay: delay,
             asArray: asArray,
+            isChrome: isChrome,
+            isSafari: isSafari,
             escapeXhtml: escapeXhtml,
             makeImage: makeImage,
             width: width,
@@ -422,7 +501,7 @@
         }
 
         function parseExtension(url) {
-            var match = /\.([^\.\/]*?)$/g.exec(url)
+            var match = /\.([^\.\/]*?)(\?|$)/g.exec(url)
             if (match) return match[1]
             else return ""
         }
@@ -490,8 +569,12 @@
         }
 
         function makeImage(uri) {
+            if (uri === "data:,") return Promise.resolve()
             return new Promise(function (resolve, reject) {
                 var image = new Image()
+                if (domtoimage.impl.options.useCredentials) {
+                    image.crossOrigin = "use-credentials"
+                }
                 image.onload = function () {
                     resolve(image)
                 }
@@ -515,6 +598,9 @@
                 request.ontimeout = timeout
                 request.responseType = "blob"
                 request.timeout = TIMEOUT
+                if (domtoimage.impl.options.useCredentials) {
+                    request.withCredentials = true
+                }
                 request.open("GET", url, true)
                 request.send()
 
@@ -581,6 +667,14 @@
             return string.replace(/([.*+?^${}()|\[\]\/\\])/g, "\\$1")
         }
 
+        function isChrome() {
+            return /chrome/i.test(navigator.userAgent)
+        }
+
+        function isSafari() {
+            return /safari/i.test(navigator.userAgent)
+        }
+
         function delay(ms) {
             return function (arg) {
                 return new Promise(function (resolve) {
@@ -599,7 +693,10 @@
         }
 
         function escapeXhtml(string) {
-            return string.replace(/#/g, "%23").replace(/\n/g, "%0A")
+            return string
+                .replace(/%/g, "%25")
+                .replace(/#/g, "%23")
+                .replace(/\n/g, "%0A")
         }
 
         function width(node) {
@@ -739,15 +836,20 @@
             function getCssRules(styleSheets) {
                 var cssRules = []
                 styleSheets.forEach(function (sheet) {
-                    try {
-                        util.asArray(sheet.cssRules || []).forEach(
-                            cssRules.push.bind(cssRules)
-                        )
-                    } catch (e) {
-                        console.log(
-                            "Error while reading CSS rules from " + sheet.href,
-                            e.toString()
-                        )
+                    if (
+                        Object.getPrototypeOf(sheet).hasOwnProperty("cssRules")
+                    ) {
+                        try {
+                            util.asArray(sheet.cssRules || []).forEach(
+                                cssRules.push.bind(cssRules)
+                            )
+                        } catch (e) {
+                            console.log(
+                                "Error while reading CSS rules from " +
+                                    sheet.href,
+                                e.toString()
+                            )
+                        }
                     }
                 })
                 return cssRules
@@ -791,7 +893,8 @@
                     .then(function (dataUrl) {
                         return new Promise(function (resolve, reject) {
                             element.onload = resolve
-                            element.onerror = reject
+                            // for any image with invalid src(such as <img src />), just ignore it
+                            element.onerror = resolve
                             element.src = dataUrl
                         })
                     })

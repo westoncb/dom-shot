@@ -1,10 +1,9 @@
 import * as THREE from "three"
 var OrbitControls = require("three-orbit-controls")(THREE)
-import domtoimage from "./domToImage"
+import domtoimage from "./domToImage2"
 import regeneratorRuntime from "regenerator-runtime"
 import { BoxBufferGeometry } from "three"
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js"
-import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js"
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js"
 import { SAOPass } from "three/examples/jsm/postprocessing/SAOPass.js"
 import { GUI } from "three/examples/jsm/libs/dat.gui.module"
@@ -19,7 +18,7 @@ if (guiOn) {
     gui = new GUI()
 }
 
-function program() {
+async function program() {
     const scene = new THREE.Scene()
     const camera = new THREE.PerspectiveCamera(
         75,
@@ -47,7 +46,7 @@ function program() {
     renderer.setClearColor("#cccccc")
     document.body.appendChild(renderer.domElement)
 
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.9)
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
     directionalLight.position.set(150, 150, 1000)
     directionalLight.target.position.set(0, 0, 0)
     directionalLight.target.updateMatrixWorld()
@@ -73,10 +72,18 @@ function program() {
     console.log("docHeight", docHeight)
 
     const nodes = []
-    collectNodes(document.querySelectorAll("body")[0], nodes)
+    const bodyNode = document.querySelectorAll("body")[0]
+    collectNodes(bodyNode, nodes)
+
+    let tex = null
+    try {
+        tex = await getDOMTex(bodyNode)
+    } catch (err) {
+        console.error(err)
+    }
 
     function node2AbstractCube(node) {
-        const rect = node.getBoundingClientRect()
+        const rect = node.getBoundingClientRect() // does this match the rect node-to-image is using?
         const treeDepth = getDepth(node, 1)
         const ELEMENT_DEPTH = 10
 
@@ -87,6 +94,7 @@ function program() {
             x: rect.x,
             y: docHeight - rect.y - node.scrollHeight,
             z: treeDepth * ELEMENT_DEPTH,
+            yInverse: rect.y,
             node,
             treeDepth,
         }
@@ -96,17 +104,14 @@ function program() {
 
     async function abstractCube2Mesh(cube) {
         const node = cube.node
-        const tex = await getDOMTex(node)
 
         const geometry = new THREE.PlaneBufferGeometry(cube.width, cube.height)
         const material = new THREE.MeshPhysicalMaterial({
             color: 0xffffff,
-            metalness: 0.25,
-            roughness: 0.6,
+            metalness: 0.15,
+            roughness: 0.75,
             clearcoat: 0.5,
             side: THREE.FrontSide,
-            transparent: true,
-            depthTest: false,
         })
         // the issues with elements disappearing at certain camera angles do seem related
         // to depth testing, but setting depthTest: false is insufficient. May be necessary
@@ -118,7 +123,6 @@ function program() {
 
         if (tex) {
             material.map = tex
-            material.near
             material.needsUpdate = true
         }
 
@@ -126,6 +130,20 @@ function program() {
         mesh.position.x = cube.x + cube.width / 2 - docWidth / 2
         mesh.position.y = cube.y + cube.height / 2 - docHeight / 2
         mesh.position.z = cube.z + cube.depth / 2
+
+        const nCube = {
+            x: cube.x / docWidth,
+            y: cube.y / docHeight,
+            width: cube.width / docWidth,
+            height: cube.height / docHeight,
+        }
+        const ul = [nCube.x, nCube.y + nCube.height]
+        const ur = [nCube.x + nCube.width, nCube.y + nCube.height]
+        const ll = [nCube.x, nCube.y]
+        const lr = [nCube.x + nCube.width, nCube.y]
+        const texCoords = new Float32Array([...ul, ...ur, ...ll, ...lr])
+
+        geometry.setAttribute("uv", new THREE.BufferAttribute(texCoords, 2))
 
         const sideOutline = [
             [-cube.width / 2, -cube.height / 2],
@@ -179,6 +197,42 @@ function program() {
             w,
             h,
             d,
+            -w, // bottom side start
+            -h,
+            d,
+            w,
+            -h,
+            d,
+            -w,
+            -h,
+            -d,
+            -w,
+            -h,
+            -d,
+            w,
+            -h,
+            -d,
+            w,
+            -h,
+            d,
+            -w, // top side start
+            h,
+            d,
+            w,
+            h,
+            d,
+            -w,
+            h,
+            -d,
+            -w,
+            h,
+            -d,
+            w,
+            h,
+            -d,
+            w,
+            h,
+            d,
         ])
 
         // itemSize = 3 because there are 3 values (components) per vertex
@@ -186,13 +240,14 @@ function program() {
             "position",
             new THREE.BufferAttribute(vertices, 3)
         )
+
         sideGeometry.computeVertexNormals()
         const sideMaterial = new THREE.MeshPhysicalMaterial({
             color: 0x8899aa,
-            metalness: 0.3,
-            roughness: 0.85,
-            clearcoat: 0.15,
-            side: THREE.FrontSide,
+            metalness: 0.5,
+            roughness: 0.5,
+            clearcoat: 0.5,
+            side: THREE.DoubleSide,
         })
         // const altGeo = new BoxBufferGeometry(w * 2, h * 2, d * 2)
         // altGeo.scale(1, 1, 0.9)
@@ -215,6 +270,7 @@ function program() {
 
         const result = await domtoimage
             .toPixelData(node, {
+                imagePlaceholder: "data:text/plain;base64,SGVsbG8sIFdvcmxkIQ==",
                 filter: curNode => {
                     return (
                         curNode.id !== "xyzthisiscrazy" &&
@@ -240,9 +296,13 @@ function program() {
         return result
     }
 
+    const nonoTags = ["link, script, meta"]
+
     function passingNode(node) {
         const valid =
-            node.nodeType === Node.ELEMENT_NODE && node.id !== "xyzthisiscrazy"
+            node.nodeType === Node.ELEMENT_NODE &&
+            node.id !== "xyzthisiscrazy" &&
+            !nonoTags.includes(node.tagName.toLowerCase())
 
         return valid
     }
@@ -250,14 +310,40 @@ function program() {
     const cubeData = nodes
         .filter(passingNode)
         .map(node => node2AbstractCube(node))
-    cubeData.sort((a, b) => b.treeDepth - a.treeDepth)
-    const meshes = cubeData.map(async cube => abstractCube2Mesh(cube))
-
-    meshes.forEach(async meshPromise => {
-        const { mesh, sideMesh } = await meshPromise
-        scene.add(mesh)
-        // scene.add(sideMesh)
+    cubeData.sort((a, b) => {
+        return a.treeDepth - b.treeDepth
     })
+    cubeData.sort((a, b) => {
+        return Number(a.node.style.zIndex) - Number(b.node.style.zIndex)
+    })
+
+    // Grab node images out of order
+    Promise.allSettled(cubeData.map(abstractCube2Mesh)).then(results => {
+        results.forEach(result => {
+            if (result.status === "fulfilled") {
+                const { mesh, sideMesh } = result.value
+                scene.add(mesh)
+                scene.add(sideMesh)
+            } else {
+                console.log(result.reason)
+            }
+        })
+    })
+
+    // Grab node images in order
+    // ;(async () => {
+    //     for (const cube of cubeData) {
+    //         try {
+    //             console.log("before")
+    //             const { mesh, sideMesh } = await abstractCube2Mesh(cube)
+    //             console.log(mesh)
+    //             scene.add(mesh)
+    //         } catch (err) {
+    //             console.error(err)
+    //         }
+    //         // scene.add(sideMesh)
+    //     }
+    // })()
 
     document.getElementsByTagName("body")[0].style.overflow = "hidden"
 
@@ -364,7 +450,7 @@ function program() {
         const saoPass = new SAOPass(scene, camera, false, true)
         composer.addPass(saoPass)
         saoPass.params.saoScale = 289
-        saoPass.params.saoIntensity = 0.04
+        saoPass.params.saoIntensity = 0.015
         saoPass.params.saoKernelRadius = 16
         saoPass.params.saoBlurRadius = 2.2
         saoPass.params.saoStdDev = 2
