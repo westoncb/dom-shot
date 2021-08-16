@@ -34,15 +34,7 @@ module.exports = {
             },
         ],
     },
-    plugins: [
-        new HtmlWebpackPlugin({
-            title: "Foam-CAD",
-            template: __dirname + "/src/index.html",
-            file: "index.html",
-            inject: "body",
-        }),
-        new webpack.HotModuleReplacementPlugin(),
-    ],
+    plugins: [new webpack.HotModuleReplacementPlugin()],
     devServer: {
         contentBase: "./dist",
         open: true,
