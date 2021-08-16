@@ -1,4 +1,4 @@
-#dom-shot-launcher {
+#ds123-launcher {
     position: fixed;
     top: 15px;
     right: 15px;
@@ -6,7 +6,7 @@
     height: 3rem;
     z-index: 9000;
     background-size: 1.8rem;
-    background-color: #2cdc5a;
+    background-color: #17c1dc;
     background-repeat: no-repeat;
     background-position: center;
     color: white;
@@ -17,12 +17,33 @@
     transition: all 150ms;
 }
 
-#dom-shot-launcher:hover {
+#ds123-launcher:hover {
     box-shadow: 0 0.3rem 0.8rem rgba(0, 0, 0, 0.3);
     transform: translateY(2px);
 }
 
-#dom-shot-launcher:active {
+#ds123-launcher:active {
     transform: scale(0.98);
     transition: none;
+}
+
+#ds123-loading-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    align-content: center;
+    padding: 1rem;
+    font-size: 1.2rem;
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    min-width: 25%;
+    transform: translate(-50%, -50%);
+    background-color: #333;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.2);
+    border-radius: 5px;
+    border: 3px solid #85a2b677;
+    color: #999;
+    z-index: 9999999999;
+    transition: opacity 200ms;
 }

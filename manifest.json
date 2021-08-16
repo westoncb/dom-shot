@@ -12,13 +12,13 @@
             "all_frames": false,
             "js": ["./dist/main.bundle.js"],
             "css": ["./src/main.css"],
-            "run_at": "document_start"
+            "run_at": "document_end"
         }
     ],
     "permissions": ["storage", "activeTab", "scripting"],
     "web_accessible_resources": [
         {
-            "resources": ["assets/play.svg"],
+            "resources": ["assets/play.svg", "assets/spinner.svg"],
             "matches": ["*://*/*"],
             "extension_ids": ["gkodljcopojfcopoblpifpahlmhfllgo"]
         }

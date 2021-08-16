@@ -1,7 +1,7 @@
 import * as THREE from "three"
 var OrbitControls = require("three-orbit-controls")(THREE)
 import domtoimage from "dom-to-image-improved"
-import regeneratorRuntime from "regenerator-runtime"
+import regeneratorRuntime from "regenerator-runtime" // needed for async/await
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js"
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js"
 import { SAOPass } from "three/examples/jsm/postprocessing/SAOPass.js"
@@ -9,14 +9,18 @@ import { SAOPass } from "three/examples/jsm/postprocessing/SAOPass.js"
 
 window.onload = program
 
+// ambient occlusion enabled
 let aoOn = true
+
+//dat-gui enabled
 let guiOn = false
 
+// dat-gui instance
 const gui = null
 
 let docHeight
 let docWidth
-let tex = null
+let texture = null
 
 let camera
 let scene
@@ -26,17 +30,22 @@ let controls
 const mouse = new THREE.Vector2()
 const raycaster = new THREE.Raycaster()
 
+const ourNodes = [
+    "ds123-webglcanvas",
+    "ds123-loading-container",
+    "wcb_debug_panel",
+]
+
 async function program() {
     docHeight = document.body.scrollHeight
     docWidth = document.body.scrollWidth
-    console.log("docHeight", docHeight)
 
     addLaunchButton()
 }
 
 function addLaunchButton() {
     const btn = document.createElement("button")
-    btn.id = "dom-shot-launcher"
+    btn.id = "ds123-launcher"
     btn.style.backgroundImage = `url(${chrome.runtime.getURL(
         "assets/play.svg"
     )})`
@@ -77,9 +86,9 @@ function initThreeScene() {
     const winWidth = window.innerWidth
     const winHeight = window.innerHeight
     renderer.setSize(winWidth, winHeight)
-    renderer.domElement.id = "xyzthisiscrazy"
+    renderer.domElement.id = "ds123-webglcanvas"
     renderer.domElement.style.zIndex = "99999"
-    renderer.setClearColor("#cccccc")
+    renderer.setClearColor("#666666")
 
     document.body.appendChild(renderer.domElement)
 
@@ -109,12 +118,14 @@ function initThreeScene() {
 }
 
 async function build3dDOM() {
+    toggleLoadingUI(true)
+
     const nodes = []
     const bodyNode = document.querySelectorAll("body")[0]
     collectNodes(bodyNode, nodes)
 
     try {
-        tex = await getDOMTex(bodyNode)
+        texture = await getDOMTex(bodyNode)
     } catch (err) {
         console.error(err)
     }
@@ -136,6 +147,8 @@ async function build3dDOM() {
                 const { mesh, sideMesh } = result.value
                 scene.add(mesh)
                 scene.add(sideMesh)
+
+                toggleLoadingUI(false)
             } else {
                 console.log(result.reason)
             }
@@ -156,6 +169,35 @@ async function build3dDOM() {
     //         // scene.add(sideMesh)
     //     }
     // })()
+}
+
+function toggleLoadingUI(on = true) {
+    const id = "ds123-loading-container"
+    let container = document.getElementById(id)
+
+    if (!container) {
+        container = document.createElement("div")
+        container.id = id
+
+        document.body.appendChild(container)
+
+        container.innerHTML = `
+        <img style="width: 6rem; height: 6rem;" src="${chrome.runtime.getURL(
+            "assets/spinner.svg"
+        )}"/>
+        Loading...
+    `
+    }
+
+    if (on) {
+        container.style.visibility = "visible"
+        container.style.opacity = "1"
+    } else {
+        container.style.opacity = "0"
+        setTimeout(() => {
+            container.style.visibility = "hidden"
+        }, 250)
+    }
 }
 
 function getDepth(node, depth) {
@@ -336,8 +378,8 @@ async function abstractCube2Mesh(cube) {
     // The issue may also be relation to precision of depth buffer instead. craigslist.com
     // shows some clear/interesting artifacts that may be useful for debugging this
 
-    if (tex) {
-        material.map = tex
+    if (texture) {
+        material.map = texture
         material.needsUpdate = true
     }
 
@@ -488,10 +530,7 @@ async function getDOMTex(node) {
         .toPixelData(node, {
             imagePlaceholder: "data:text/plain;base64,SGVsbG8sIFdvcmxkIQ==",
             filter: curNode => {
-                return (
-                    curNode.id !== "xyzthisiscrazy" &&
-                    curNode.id !== "wcb_debug_panel"
-                )
+                return !ourNodes.includes(curNode.id)
             },
         })
         .then(function (pixels) {
@@ -515,7 +554,7 @@ async function getDOMTex(node) {
 function acceptableNode(node) {
     const valid =
         node.nodeType === Node.ELEMENT_NODE &&
-        node.id !== "xyzthisiscrazy" &&
+        !ourNodes.includes(node.id) &&
         !["link, script, meta"].includes(node.tagName.toLowerCase())
 
     return valid
