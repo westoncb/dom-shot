@@ -13,7 +13,7 @@ var OrbitControls = require("three-orbit-controls")(THREE)
 window.onload = program
 
 // ambient occlusion enabled
-let aoOn = true
+let aoOn = false
 
 //dat-gui enabled
 let guiOn = false
@@ -32,6 +32,8 @@ let scene
 let renderer
 let composer
 let lastFrameTime
+let directionalLight
+let spotLight
 const mouse = new THREE.Vector2()
 const raycaster = new THREE.Raycaster()
 
@@ -53,6 +55,7 @@ const cameraPosDest = new Vector3()
 const cameraTargetDest = new Vector3()
 const cameraTarget = new Vector3()
 
+const CAM_ROTATION_FROM_VERTICAL = Math.PI / 4.8
 const MAX_VELOCITY = 1600
 const ACCELERATION_MAGNITUTE = 1200
 const FRICTION_COEFFICIENT = 0.96
@@ -67,7 +70,7 @@ async function program() {
     docHeight = document.body.scrollHeight
     docWidth = document.body.scrollWidth
 
-    if (window.location.href.includes("ycombinator")) {
+    if (window.location.href.includes("ycombinatorz")) {
         launch3dMode()
     } else {
         addLaunchButton()
@@ -114,11 +117,12 @@ function initShip() {
                 child.geometry.scale(5, 5, 5)
                 child.geometry.rotateX(-Math.PI / 2)
                 child.geometry.rotateZ(-Math.PI)
+                child.castShadow = true
+                // child.receiveShadow = true
             }
         })
         const shipBBox = new Box3().setFromObject(shipMesh)
         const center = shipBBox.getCenter(new THREE.Vector3())
-        console.log("SDF", center)
 
         shipMesh.traverse(function (child) {
             if (child.isMesh) {
@@ -185,7 +189,11 @@ function initThreeScene() {
         antialias: false,
         stencil: false,
         physicallyCorrectLights: false,
+        toneMapping: THREE.ReinhardToneMapping,
     })
+    renderer.shadowMap.enabled = true
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
+
     const winWidth = window.innerWidth
     const winHeight = window.innerHeight
     renderer.setSize(winWidth, winHeight)
@@ -195,13 +203,42 @@ function initThreeScene() {
 
     document.body.appendChild(renderer.domElement)
 
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
-    directionalLight.position.set(150, 150, 1000)
+    directionalLight = new THREE.DirectionalLight(0xffffff, 0.75)
+    directionalLight.position.set(300, -300, 2000)
     directionalLight.target.position.set(0, 0, 0)
     directionalLight.target.updateMatrixWorld()
+    directionalLight.castShadow = true
+    directionalLight.shadow.mapSize.width = 2048
+    directionalLight.shadow.mapSize.height = 2048
+    directionalLight.shadow.camera.near = 0.5
+    directionalLight.shadow.camera.far = 2000
+    const d = 2000
+    directionalLight.shadow.camera.left = -d
+    directionalLight.shadow.camera.right = d
+    directionalLight.shadow.camera.top = d
+    directionalLight.shadow.camera.bottom = -d
+    directionalLight.shadow.bias = 0.00001
+    // const helper = new THREE.CameraHelper(directionalLight.shadow.camera)
+    // scene.add(helper)
+
     scene.add(directionalLight)
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.2)
     scene.add(ambientLight)
+
+    spotLight = new THREE.SpotLight(0x6688cc, 0.425)
+    spotLight.position.set(-100, 125, -10)
+    spotLight.castShadow = false
+    spotLight.angle = Math.PI / 10
+    spotLight.penumbra = 0.5
+    // spotLight.shadow.mapSize.width = 512
+    // spotLight.shadow.mapSize.height = 512
+    // spotLight.shadow.camera.near = 0.5
+    // spotLight.shadow.camera.far = 1000
+    // spotLight.shadow.focus = 1
+    // spotLight.shadow.camera.fov = 30
+    camera.add(spotLight)
+    // const helper = new THREE.CameraHelper(spotLight.shadow.camera)
+    // scene.add(helper)
 
     if (aoOn) {
         composer = new EffectComposer(renderer)
@@ -329,16 +366,19 @@ function animate(time) {
 
     updateShip(deltaSeconds)
 
-    cameraPosDest.copy(cameraPosDestFromShipPos(shipMesh.position))
-    camera.position.add(
-        cameraPosDest.clone().sub(camera.position).multiplyScalar(0.1)
-    )
+    if (!enableOrbitControls) {
+        cameraPosDest.copy(cameraPosDestFromShipPos(shipMesh.position))
+        camera.position.add(
+            cameraPosDest.clone().sub(camera.position).multiplyScalar(0.05)
+        )
 
-    cameraTargetDest.copy(shipMesh.position)
-    cameraTarget.add(
-        cameraTargetDest.clone().sub(cameraTarget).multiplyScalar(0.1)
-    )
-    camera.lookAt(cameraTarget)
+        cameraTargetDest.copy(shipMesh.position)
+        cameraTarget.add(
+            cameraTargetDest.clone().sub(cameraTarget).multiplyScalar(0.05)
+        )
+        camera.lookAt(cameraTarget)
+        spotLight.target = shipMesh
+    }
 
     render()
     requestAnimationFrame(animate)
@@ -554,6 +594,8 @@ async function abstractCube2Mesh(cube) {
     mesh.position.x = cube.x + cube.width / 2 - docWidth / 2
     mesh.position.y = cube.y + cube.height / 2 - docHeight / 2
     mesh.position.z = cube.z + cube.depth / 2
+    mesh.receiveShadow = true
+    mesh.castShadow = true
 
     const nCube = {
         x: cube.x / docWidth,
@@ -679,6 +721,8 @@ async function abstractCube2Mesh(cube) {
     const sideMesh = new THREE.Mesh(sideGeometry, sideMaterial)
     sideMesh.position.copy(mesh.position)
     sideMesh.position.z -= cube.depth * 0.5
+    sideMesh.receiveShadow = true
+    sideMesh.castShadow = true
 
     mesh.userData.domNode = node
     sideMesh.userData.domNode = node
@@ -729,7 +773,7 @@ function acceptableNode(node) {
 
 function cameraPosDestFromShipPos(shipPos) {
     const pos = new Vector3(0, 0, 650)
-    pos.applyAxisAngle(new Vector3(1, 0, 0), Math.PI / 4.5)
+    pos.applyAxisAngle(new Vector3(1, 0, 0), CAM_ROTATION_FROM_VERTICAL)
     return shipPos.clone().add(pos)
 }
 
