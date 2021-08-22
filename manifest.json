@@ -18,7 +18,13 @@
     "permissions": ["storage", "activeTab", "scripting"],
     "web_accessible_resources": [
         {
-            "resources": ["assets/play.svg", "assets/spinner.svg"],
+            "resources": [
+                "assets/play.svg",
+                "assets/spinner.svg",
+                "assets/scene.gltf",
+                "assets/scene.bin",
+                "assets/textures/*.png"
+            ],
             "matches": ["*://*/*"],
             "extension_ids": ["gkodljcopojfcopoblpifpahlmhfllgo"]
         }

@@ -39,10 +39,10 @@
     top: 50%;
     min-width: 25%;
     transform: translate(-50%, -50%);
-    background-color: #333;
+    background-color: #222;
     box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.2);
     border-radius: 5px;
-    border: 3px solid #85a2b677;
+    border: 3px solid #85a2b699;
     color: #999;
     z-index: 9999999999;
     transition: opacity 200ms;

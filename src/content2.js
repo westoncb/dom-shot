@@ -1,11 +1,14 @@
-import * as THREE from "three"
-var OrbitControls = require("three-orbit-controls")(THREE)
-import domtoimage from "dom-to-image-improved"
 import regeneratorRuntime from "regenerator-runtime" // needed for async/await
+import domtoimage from "dom-to-image-improved"
+import * as THREE from "three"
+import { Box3, Vector3 } from "three"
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader"
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js"
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js"
 import { SAOPass } from "three/examples/jsm/postprocessing/SAOPass.js"
 // import { GUI } from "three/examples/jsm/libs/dat.gui.module"
+import Util from "./util"
+var OrbitControls = require("three-orbit-controls")(THREE)
 
 window.onload = program
 
@@ -18,6 +21,8 @@ let guiOn = false
 // dat-gui instance
 const gui = null
 
+const enableOrbitControls = false
+
 let docHeight
 let docWidth
 let texture = null
@@ -26,9 +31,31 @@ let camera
 let scene
 let renderer
 let composer
-let controls
+let lastFrameTime
 const mouse = new THREE.Vector2()
 const raycaster = new THREE.Raycaster()
+
+const domBBox = new Box3()
+let shipMesh = null
+const shipState = {
+    thrusting: false,
+    turningLeft: false,
+    turningRight: false,
+    reversing: false,
+    firing: false,
+    acceleration: new Vector3(),
+    velocity: new Vector3(),
+    direction: new Vector3(0, 1, 0),
+    angularVelocity: new Vector3(),
+    angle: 0,
+}
+const cameraPosDest = new Vector3()
+const cameraTargetDest = new Vector3()
+const cameraTarget = new Vector3()
+
+const MAX_VELOCITY = 1600
+const ACCELERATION_MAGNITUTE = 1200
+const FRICTION_COEFFICIENT = 0.96
 
 const ourNodes = [
     "ds123-webglcanvas",
@@ -40,7 +67,11 @@ async function program() {
     docHeight = document.body.scrollHeight
     docWidth = document.body.scrollWidth
 
-    addLaunchButton()
+    if (window.location.href.includes("ycombinator")) {
+        launch3dMode()
+    } else {
+        addLaunchButton()
+    }
 }
 
 function addLaunchButton() {
@@ -56,14 +87,81 @@ function addLaunchButton() {
     document.body.appendChild(btn)
 }
 
-function launch3dMode() {
+async function launch3dMode() {
     initThreeScene()
-    build3dDOM()
+
+    toggleLoadingUI(true)
+    await build3dDOM()
+    await initShip()
+    toggleLoadingUI(false)
     // initDebugPanel()
 
     document.getElementsByTagName("body")[0].style.overflow = "hidden"
 
     animate()
+}
+
+function initShip() {
+    const assetsPath = chrome.runtime.getURL("assets/")
+    console.log("dat path", assetsPath)
+    const loader = new GLTFLoader().setPath(assetsPath)
+
+    const shipLoadedHandler = gltf => {
+        shipMesh = gltf.scene
+
+        shipMesh.traverse(function (child) {
+            if (child.isMesh) {
+                child.geometry.scale(5, 5, 5)
+                child.geometry.rotateX(-Math.PI / 2)
+                child.geometry.rotateZ(-Math.PI)
+            }
+        })
+        const shipBBox = new Box3().setFromObject(shipMesh)
+        const center = shipBBox.getCenter(new THREE.Vector3())
+        console.log("SDF", center)
+
+        shipMesh.traverse(function (child) {
+            if (child.isMesh) {
+                child.geometry.translate(-center.x, 0, -center.y)
+            }
+        })
+
+        // console.log("MODEL", ship)
+
+        // position the ship at the highest extent of the 3d DOM's bbox
+        shipMesh.position.z = domBBox.max.z
+
+        scene.add(shipMesh)
+
+        const keyToAttr = {
+            w: "thrusting",
+            s: "reversing",
+            a: "turningLeft",
+            d: "turningRight",
+        }
+
+        window.onkeydown = e => {
+            for (const key of Object.keys(keyToAttr)) {
+                if (e.key === key) {
+                    shipState[keyToAttr[key]] = true
+                }
+            }
+        }
+        window.onkeyup = e => {
+            for (const key of Object.keys(keyToAttr)) {
+                if (e.key === key) {
+                    shipState[keyToAttr[key]] = false
+                }
+            }
+        }
+    }
+
+    return new Promise((resolve, reject) => {
+        loader.load("scene.gltf", gltf => {
+            shipLoadedHandler(gltf)
+            resolve()
+        })
+    })
 }
 
 function initThreeScene() {
@@ -76,12 +174,17 @@ function initThreeScene() {
     )
     camera.position.set(0, 0, 800)
     camera.lookAt(0, 0, 0)
+    cameraTarget.set(0, 0, 0)
     scene.add(camera)
-    controls = new OrbitControls(camera)
+
+    if (enableOrbitControls) {
+        new OrbitControls(camera)
+    }
 
     renderer = new THREE.WebGLRenderer({
-        antialias: true,
+        antialias: false,
         stencil: false,
+        physicallyCorrectLights: false,
     })
     const winWidth = window.innerWidth
     const winHeight = window.innerHeight
@@ -118,57 +221,58 @@ function initThreeScene() {
 }
 
 async function build3dDOM() {
-    toggleLoadingUI(true)
-
     const nodes = []
     const bodyNode = document.querySelectorAll("body")[0]
     collectNodes(bodyNode, nodes)
 
     try {
         texture = await getDOMTex(bodyNode)
-    } catch (err) {
-        console.error(err)
-    }
 
-    const cubeData = nodes
-        .filter(acceptableNode)
-        .map(node => node2AbstractCube(node))
-    cubeData.sort((a, b) => {
-        return a.treeDepth - b.treeDepth
-    })
-    cubeData.sort((a, b) => {
-        return Number(a.node.style.zIndex) - Number(b.node.style.zIndex)
-    })
+        const cubeData = nodes
+            .filter(acceptableNode)
+            .map(node => node2AbstractCube(node))
+        cubeData.sort((a, b) => {
+            return a.treeDepth - b.treeDepth
+        })
+        cubeData.sort((a, b) => {
+            return Number(a.node.style.zIndex) - Number(b.node.style.zIndex)
+        })
 
-    // Grab node images out of order
-    Promise.allSettled(cubeData.map(abstractCube2Mesh)).then(results => {
+        // Grab node images out of order
+        const results = await Promise.allSettled(
+            cubeData.map(abstractCube2Mesh)
+        )
         results.forEach(result => {
             if (result.status === "fulfilled") {
                 const { mesh, sideMesh } = result.value
                 scene.add(mesh)
                 scene.add(sideMesh)
-
-                toggleLoadingUI(false)
             } else {
                 console.log(result.reason)
             }
         })
-    })
 
-    // Grab node images in order
-    // ;(async () => {
-    //     for (const cube of cubeData) {
-    //         try {
-    //             console.log("before")
-    //             const { mesh, sideMesh } = await abstractCube2Mesh(cube)
-    //             console.log(mesh)
-    //             scene.add(mesh)
-    //         } catch (err) {
-    //             console.error(err)
-    //         }
-    //         // scene.add(sideMesh)
-    //     }
-    // })()
+        Util.findNodesWithType(scene, "nodeTop").forEach(mesh =>
+            domBBox.expandByObject(mesh)
+        )
+
+        // Grab node images in order
+        // ;(async () => {
+        //     for (const cube of cubeData) {
+        //         try {
+        //             console.log("before")
+        //             const { mesh, sideMesh } = await abstractCube2Mesh(cube)
+        //             console.log(mesh)
+        //             scene.add(mesh)
+        //         } catch (err) {
+        //             console.error(err)
+        //         }
+        //         // scene.add(sideMesh)
+        //     }
+        // })()
+    } catch (err) {
+        console.error(err)
+    }
 }
 
 function toggleLoadingUI(on = true) {
@@ -216,10 +320,72 @@ function collectNodes(node, array) {
     }
 }
 
-function animate() {
-    requestAnimationFrame(animate)
+function animate(time) {
+    const delta = lastFrameTime !== undefined ? time - lastFrameTime : 15
+
+    // implement proper game loop setup; currently the real delta is too variable, causes jitter
+    const deltaSeconds = 15 / 1000
+    lastFrameTime = time
+
+    updateShip(deltaSeconds)
+
+    cameraPosDest.copy(cameraPosDestFromShipPos(shipMesh.position))
+    camera.position.add(
+        cameraPosDest.clone().sub(camera.position).multiplyScalar(0.1)
+    )
+
+    cameraTargetDest.copy(shipMesh.position)
+    cameraTarget.add(
+        cameraTargetDest.clone().sub(cameraTarget).multiplyScalar(0.1)
+    )
+    camera.lookAt(cameraTarget)
 
     render()
+    requestAnimationFrame(animate)
+}
+
+function updateShip(delta) {
+    if (shipState.thrusting || shipState.reversing) {
+        shipState.acceleration.copy(
+            shipState.direction
+                .clone()
+                .multiplyScalar(
+                    (shipState.reversing ? -1 : 1) * ACCELERATION_MAGNITUTE
+                )
+        )
+    } else {
+        shipState.acceleration.set(0, 0, 0)
+    }
+    shipState.velocity.add(shipState.acceleration.clone().multiplyScalar(delta))
+    shipState.velocity.set(
+        Math.min(MAX_VELOCITY, shipState.velocity.x),
+        Math.min(MAX_VELOCITY, shipState.velocity.y),
+        Math.min(MAX_VELOCITY, shipState.velocity.z)
+    )
+
+    // 'friction'
+    shipState.velocity.copy(
+        shipState.velocity.clone().multiplyScalar(FRICTION_COEFFICIENT)
+    )
+
+    if (shipState.turningLeft || shipState.turningRight) {
+        shipState.angularVelocity.z = 6 * (shipState.turningLeft ? 1 : -1)
+    } else {
+        shipState.angularVelocity.z = 0
+    }
+
+    shipState.angle += delta * shipState.angularVelocity.z
+    shipMesh.rotation.z = shipState.angle
+    shipState.direction.copy(
+        new Vector3(0, 1, 0).applyAxisAngle(
+            new Vector3(0, 0, 1),
+            shipState.angle
+        )
+    )
+
+    if (shipMesh) {
+        shipMesh.position.add(shipState.velocity.clone().multiplyScalar(delta))
+    }
 }
 
 function render() {
@@ -336,10 +502,10 @@ function onMouseMove(event) {
     mouse.y = -(event.clientY / window.innerHeight) * 2 + 1
 }
 
-window.addEventListener("mousemove", onMouseMove, false)
+// window.addEventListener("mousemove", onMouseMove, false)
 
 function node2AbstractCube(node) {
-    const rect = node.getBoundingClientRect() // does this match the rect node-to-image is using?
+    const rect = node.getBoundingClientRect() // does this exactly match the rect node-to-image is using?
     const treeDepth = getDepth(node, 1)
     const ELEMENT_DEPTH = 12
 
@@ -384,6 +550,7 @@ async function abstractCube2Mesh(cube) {
     }
 
     const mesh = new THREE.Mesh(geometry, material)
+    mesh.userData.objectType = "nodeTop"
     mesh.position.x = cube.x + cube.width / 2 - docWidth / 2
     mesh.position.y = cube.y + cube.height / 2 - docHeight / 2
     mesh.position.z = cube.z + cube.depth / 2
@@ -558,4 +725,41 @@ function acceptableNode(node) {
         !["link, script, meta"].includes(node.tagName.toLowerCase())
 
     return valid
+}
+
+function cameraPosDestFromShipPos(shipPos) {
+    const pos = new Vector3(0, 0, 650)
+    pos.applyAxisAngle(new Vector3(1, 0, 0), Math.PI / 4.5)
+    return shipPos.clone().add(pos)
+}
+
+function encode(input) {
+    var keyStr =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
+    var output = ""
+    var chr1, chr2, chr3, enc1, enc2, enc3, enc4
+    var i = 0
+
+    while (i < input.length) {
+        chr1 = input[i++]
+        chr2 = i < input.length ? input[i++] : Number.NaN // Not sure if the index
+        chr3 = i < input.length ? input[i++] : Number.NaN // checks are needed here
+
+        enc1 = chr1 >> 2
+        enc2 = ((chr1 & 3) << 4) | (chr2 >> 4)
+        enc3 = ((chr2 & 15) << 2) | (chr3 >> 6)
+        enc4 = chr3 & 63
+
+        if (isNaN(chr2)) {
+            enc3 = enc4 = 64
+        } else if (isNaN(chr3)) {
+            enc4 = 64
+        }
+        output +=
+            keyStr.charAt(enc1) +
+            keyStr.charAt(enc2) +
+            keyStr.charAt(enc3) +
+            keyStr.charAt(enc4)
+    }
+    return output
 }
