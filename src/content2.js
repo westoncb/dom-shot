@@ -2,12 +2,12 @@ import regeneratorRuntime from "regenerator-runtime" // needed for async/await
 import domtoimage from "dom-to-image-improved"
 import * as THREE from "three"
 import { Box3, Vector3 } from "three"
-import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader"
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js"
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js"
 import { SAOPass } from "three/examples/jsm/postprocessing/SAOPass.js"
 // import { GUI } from "three/examples/jsm/libs/dat.gui.module"
 import Util from "./util"
+import Game from "./game"
 var OrbitControls = require("three-orbit-controls")(THREE)
 
 window.onload = program
@@ -37,28 +37,7 @@ let spotLight
 const mouse = new THREE.Vector2()
 const raycaster = new THREE.Raycaster()
 
-const domBBox = new Box3()
-let shipMesh = null
-const shipState = {
-    thrusting: false,
-    turningLeft: false,
-    turningRight: false,
-    reversing: false,
-    firing: false,
-    acceleration: new Vector3(),
-    velocity: new Vector3(),
-    direction: new Vector3(0, 1, 0),
-    angularVelocity: new Vector3(),
-    angle: 0,
-}
-const cameraPosDest = new Vector3()
-const cameraTargetDest = new Vector3()
-const cameraTarget = new Vector3()
-
-const CAM_ROTATION_FROM_VERTICAL = Math.PI / 4.8
-const MAX_VELOCITY = 1600
-const ACCELERATION_MAGNITUTE = 1200
-const FRICTION_COEFFICIENT = 0.96
+let activeGame
 
 const ourNodes = [
     "ds123-webglcanvas",
@@ -70,7 +49,7 @@ async function program() {
     docHeight = document.body.scrollHeight
     docWidth = document.body.scrollWidth
 
-    if (window.location.href.includes("ycombinatorz")) {
+    if (window.location.href.includes("ycombinator")) {
         launch3dMode()
     } else {
         addLaunchButton()
@@ -95,7 +74,8 @@ async function launch3dMode() {
 
     toggleLoadingUI(true)
     await build3dDOM()
-    await initShip()
+    await Game.loadAssets()
+    startGame()
     toggleLoadingUI(false)
     // initDebugPanel()
 
@@ -104,68 +84,8 @@ async function launch3dMode() {
     animate()
 }
 
-function initShip() {
-    const assetsPath = chrome.runtime.getURL("assets/")
-    console.log("dat path", assetsPath)
-    const loader = new GLTFLoader().setPath(assetsPath)
-
-    const shipLoadedHandler = gltf => {
-        shipMesh = gltf.scene
-
-        shipMesh.traverse(function (child) {
-            if (child.isMesh) {
-                child.geometry.scale(5, 5, 5)
-                child.geometry.rotateX(-Math.PI / 2)
-                child.geometry.rotateZ(-Math.PI)
-                child.castShadow = true
-                // child.receiveShadow = true
-            }
-        })
-        const shipBBox = new Box3().setFromObject(shipMesh)
-        const center = shipBBox.getCenter(new THREE.Vector3())
-
-        shipMesh.traverse(function (child) {
-            if (child.isMesh) {
-                child.geometry.translate(-center.x, 0, -center.y)
-            }
-        })
-
-        // console.log("MODEL", ship)
-
-        // position the ship at the highest extent of the 3d DOM's bbox
-        shipMesh.position.z = domBBox.max.z
-
-        scene.add(shipMesh)
-
-        const keyToAttr = {
-            w: "thrusting",
-            s: "reversing",
-            a: "turningLeft",
-            d: "turningRight",
-        }
-
-        window.onkeydown = e => {
-            for (const key of Object.keys(keyToAttr)) {
-                if (e.key === key) {
-                    shipState[keyToAttr[key]] = true
-                }
-            }
-        }
-        window.onkeyup = e => {
-            for (const key of Object.keys(keyToAttr)) {
-                if (e.key === key) {
-                    shipState[keyToAttr[key]] = false
-                }
-            }
-        }
-    }
-
-    return new Promise((resolve, reject) => {
-        loader.load("scene.gltf", gltf => {
-            shipLoadedHandler(gltf)
-            resolve()
-        })
-    })
+function startGame() {
+    activeGame = new Game(scene, camera, spotLight)
 }
 
 function initThreeScene() {
@@ -178,7 +98,6 @@ function initThreeScene() {
     )
     camera.position.set(0, 0, 800)
     camera.lookAt(0, 0, 0)
-    cameraTarget.set(0, 0, 0)
     scene.add(camera)
 
     if (enableOrbitControls) {
@@ -289,10 +208,6 @@ async function build3dDOM() {
             }
         })
 
-        Util.findNodesWithType(scene, "nodeTop").forEach(mesh =>
-            domBBox.expandByObject(mesh)
-        )
-
         // Grab node images in order
         // ;(async () => {
         //     for (const cube of cubeData) {
@@ -364,68 +279,12 @@ function animate(time) {
     const deltaSeconds = 15 / 1000
     lastFrameTime = time
 
-    updateShip(deltaSeconds)
-
-    if (!enableOrbitControls) {
-        cameraPosDest.copy(cameraPosDestFromShipPos(shipMesh.position))
-        camera.position.add(
-            cameraPosDest.clone().sub(camera.position).multiplyScalar(0.05)
-        )
-
-        cameraTargetDest.copy(shipMesh.position)
-        cameraTarget.add(
-            cameraTargetDest.clone().sub(cameraTarget).multiplyScalar(0.05)
-        )
-        camera.lookAt(cameraTarget)
-        spotLight.target = shipMesh
+    if (Game.loaded) {
+        activeGame.update(deltaSeconds, enableOrbitControls)
     }
 
     render()
     requestAnimationFrame(animate)
-}
-
-function updateShip(delta) {
-    if (shipState.thrusting || shipState.reversing) {
-        shipState.acceleration.copy(
-            shipState.direction
-                .clone()
-                .multiplyScalar(
-                    (shipState.reversing ? -1 : 1) * ACCELERATION_MAGNITUTE
-                )
-        )
-    } else {
-        shipState.acceleration.set(0, 0, 0)
-    }
-    shipState.velocity.add(shipState.acceleration.clone().multiplyScalar(delta))
-    shipState.velocity.set(
-        Math.min(MAX_VELOCITY, shipState.velocity.x),
-        Math.min(MAX_VELOCITY, shipState.velocity.y),
-        Math.min(MAX_VELOCITY, shipState.velocity.z)
-    )
-
-    // 'friction'
-    shipState.velocity.copy(
-        shipState.velocity.clone().multiplyScalar(FRICTION_COEFFICIENT)
-    )
-
-    if (shipState.turningLeft || shipState.turningRight) {
-        shipState.angularVelocity.z = 6 * (shipState.turningLeft ? 1 : -1)
-    } else {
-        shipState.angularVelocity.z = 0
-    }
-
-    shipState.angle += delta * shipState.angularVelocity.z
-    shipMesh.rotation.z = shipState.angle
-    shipState.direction.copy(
-        new Vector3(0, 1, 0).applyAxisAngle(
-            new Vector3(0, 0, 1),
-            shipState.angle
-        )
-    )
-
-    if (shipMesh) {
-        shipMesh.position.add(shipState.velocity.clone().multiplyScalar(delta))
-    }
 }
 
 function render() {
@@ -719,6 +578,7 @@ async function abstractCube2Mesh(cube) {
     // const altGeo = new BoxBufferGeometry(w * 2, h * 2, d * 2)
     // altGeo.scale(1, 1, 0.9)
     const sideMesh = new THREE.Mesh(sideGeometry, sideMaterial)
+    sideMesh.userData.objectType = "nodeSides"
     sideMesh.position.copy(mesh.position)
     sideMesh.position.z -= cube.depth * 0.5
     sideMesh.receiveShadow = true
@@ -769,12 +629,6 @@ function acceptableNode(node) {
         !["link, script, meta"].includes(node.tagName.toLowerCase())
 
     return valid
-}
-
-function cameraPosDestFromShipPos(shipPos) {
-    const pos = new Vector3(0, 0, 650)
-    pos.applyAxisAngle(new Vector3(1, 0, 0), CAM_ROTATION_FROM_VERTICAL)
-    return shipPos.clone().add(pos)
 }
 
 function encode(input) {
