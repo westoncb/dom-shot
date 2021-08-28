@@ -1,5 +1,6 @@
 import Assets from "./assets"
 import Ship from "./ship"
+import DOM3D from "./dom3d"
 import Util from "./util"
 import { Box3, Vector3 } from "three"
 
@@ -16,11 +17,19 @@ class Game {
         this.scene = scene
         this.camera = camera
         this.spotLight = spotLight
+    }
+
+    start() {
         this.ship = Ship.construct()
         this.setUpEvents()
 
+        const nodies = DOM3D.constructNodies()
+        for (const nodie of nodies) {
+            this.addEntity(nodie)
+        }
+
         this.domBBox = new Box3()
-        Util.findNodesWithType(this.scene, "nodeTop").forEach(mesh =>
+        Util.findNodesWithType(this.scene, "nodieGroup").forEach(mesh =>
             this.domBBox.expandByObject(mesh)
         )
 
@@ -32,6 +41,9 @@ class Game {
     static async loadAssets() {
         const shipAssets = await Ship.loadAssets()
         Assets.merge(shipAssets)
+
+        const domAssets = await DOM3D.loadAssets()
+        Assets.merge(domAssets)
 
         Game.loaded = true
     }
