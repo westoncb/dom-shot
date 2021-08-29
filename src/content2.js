@@ -1,6 +1,6 @@
 import regeneratorRuntime from "regenerator-runtime" // needed for async/await
 import * as THREE from "three"
-import { Box3, Vector3 } from "three"
+import { Box3, Quaternion, Vector3 } from "three"
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js"
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js"
 import { SAOPass } from "three/examples/jsm/postprocessing/SAOPass.js"
@@ -22,8 +22,9 @@ let guiOn = false
 const gui = null
 
 const enableOrbitControls = false
+const shouldRenderForwardView = false
 
-let camera
+let camera, camera2
 let scene
 let renderer
 let composer
@@ -83,9 +84,21 @@ function initThreeScene() {
         100,
         8000
     )
+
+    if (shouldRenderForwardView) {
+        camera2 = new THREE.PerspectiveCamera(
+            75,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            2000
+        )
+        scene.add(camera2)
+    }
+
     camera.position.set(0, 0, 800)
     camera.lookAt(0, 0, 0)
     scene.add(camera)
+    scene.fog = new THREE.Fog(0x333333, 300, 2000)
 
     if (enableOrbitControls) {
         new OrbitControls(camera)
@@ -105,7 +118,7 @@ function initThreeScene() {
     renderer.setSize(winWidth, winHeight)
     renderer.domElement.id = "ds123-webglcanvas"
     renderer.domElement.style.zIndex = "99999"
-    renderer.setClearColor("#666666")
+    renderer.setClearColor("#333333")
 
     document.body.appendChild(renderer.domElement)
 
@@ -128,10 +141,10 @@ function initThreeScene() {
     // scene.add(helper)
 
     scene.add(directionalLight)
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.2)
+    const ambientLight = new THREE.HemisphereLight(0xffffbb, 0x080840, 0.5)
     scene.add(ambientLight)
 
-    spotLight = new THREE.SpotLight(0x6688cc, 0.425)
+    spotLight = new THREE.SpotLight(0x6688cc, 0.325)
     spotLight.position.set(-100, 125, -10)
     spotLight.castShadow = false
     spotLight.angle = Math.PI / 10
@@ -217,11 +230,40 @@ function render() {
     // const intersects = raycaster.intersectObjects(scene.children)
     // highlightHoveredObjects(intersects)
 
+    renderer.setViewport(0, 0, window.innerWidth, window.innerHeight)
+
     if (aoOn && composer) {
         composer.render()
     } else if (renderer) {
         renderer.render(scene, camera)
     }
+
+    if (shouldRenderForwardView) {
+        renderForwardView()
+    }
+}
+
+function renderForwardView() {
+    const insetWidth = 400
+    const insetHeight = 180
+
+    renderer.clearDepth() // important!
+
+    renderer.setScissorTest(true)
+
+    renderer.setScissor(20, 20, insetWidth, insetHeight)
+
+    renderer.setViewport(20, 20, insetWidth, insetHeight)
+
+    const shipPos = activeGame.ship.obj3d.position.clone()
+    camera2.position.copy(shipPos.clone().add(new Vector3(0, 100, 20)))
+    const advec = activeGame.ship.direction.clone().multiplyScalar(200)
+    camera2.lookAt(shipPos.clone().add(advec))
+    camera2.updateMatrixWorld()
+
+    renderer.render(scene, camera2)
+
+    renderer.setScissorTest(false)
 }
 
 function initDebugPanel() {
@@ -323,34 +365,3 @@ function onMouseMove(event) {
 }
 
 // window.addEventListener("mousemove", onMouseMove, false)
-
-function encode(input) {
-    var keyStr =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
-    var output = ""
-    var chr1, chr2, chr3, enc1, enc2, enc3, enc4
-    var i = 0
-
-    while (i < input.length) {
-        chr1 = input[i++]
-        chr2 = i < input.length ? input[i++] : Number.NaN // Not sure if the index
-        chr3 = i < input.length ? input[i++] : Number.NaN // checks are needed here
-
-        enc1 = chr1 >> 2
-        enc2 = ((chr1 & 3) << 4) | (chr2 >> 4)
-        enc3 = ((chr2 & 15) << 2) | (chr3 >> 6)
-        enc4 = chr3 & 63
-
-        if (isNaN(chr2)) {
-            enc3 = enc4 = 64
-        } else if (isNaN(chr3)) {
-            enc4 = 64
-        }
-        output +=
-            keyStr.charAt(enc1) +
-            keyStr.charAt(enc2) +
-            keyStr.charAt(enc3) +
-            keyStr.charAt(enc4)
-    }
-    return output
-}
