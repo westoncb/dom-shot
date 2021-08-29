@@ -16,7 +16,7 @@ class DOM3D {
 
         const nodies = nodes
             .filter(acceptableNode)
-            .map(node => Nodie.construct(node))
+            .map(node => Nodie.create(node))
         nodies.sort((a, b) => {
             return a.treeDepth - b.treeDepth
         })

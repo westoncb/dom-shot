@@ -3,7 +3,7 @@ import Entity from "./entity"
 import Assets from "./assets"
 
 class Nodie {
-    static construct(node) {
+    static create(node) {
         const nodie = new Entity("nodie")
         nodie.domNode = node
 

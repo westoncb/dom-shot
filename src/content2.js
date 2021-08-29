@@ -7,6 +7,7 @@ import { SAOPass } from "three/examples/jsm/postprocessing/SAOPass.js"
 // import { GUI } from "three/examples/jsm/libs/dat.gui.module"
 import Util from "./util"
 import Game from "./game"
+import LilSM from "./lilsm"
 var OrbitControls = require("three-orbit-controls")(THREE)
 
 window.onload = program
@@ -199,6 +200,7 @@ function animate(time) {
     lastFrameTime = time
 
     if (Game.loaded) {
+        LilSM.globalUpdate(deltaSeconds)
         activeGame.update(deltaSeconds, enableOrbitControls)
     }
 

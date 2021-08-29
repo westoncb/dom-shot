@@ -7,7 +7,7 @@ import Game from "./game"
 const ACCELERATION_MAGNITUTE = 1200
 
 class Ship {
-    static construct() {
+    static create() {
         const ship = new Entity("ship")
         ship.thrusting = false
         ship.turningLeft = false
