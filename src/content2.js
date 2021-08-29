@@ -92,6 +92,7 @@ function initThreeScene() {
             0.1,
             2000
         )
+        camera2.up = new Vector3(0, 0, 1)
         scene.add(camera2)
     }
 
@@ -256,7 +257,15 @@ function renderForwardView() {
     renderer.setViewport(20, 20, insetWidth, insetHeight)
 
     const shipPos = activeGame.ship.obj3d.position.clone()
-    camera2.position.copy(shipPos.clone().add(new Vector3(0, 100, 20)))
+    camera2.position.copy(
+        shipPos
+            .clone()
+            .add(
+                new Vector3(0, 0, 40).add(
+                    activeGame.ship.direction.clone().multiplyScalar(30)
+                )
+            )
+    )
     const advec = activeGame.ship.direction.clone().multiplyScalar(200)
     camera2.lookAt(shipPos.clone().add(advec))
     camera2.updateMatrixWorld()
