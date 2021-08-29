@@ -207,10 +207,10 @@ function toggleLoadingUI(on = true) {
 }
 
 function animate(time) {
-    const delta = lastFrameTime !== undefined ? time - lastFrameTime : 15
+    const delta = lastFrameTime !== undefined ? time - lastFrameTime : 16
 
     // implement proper game loop setup; currently the real delta is too variable, causes jitter
-    const deltaSeconds = 15 / 1000
+    const deltaSeconds = 16 / 1000
     lastFrameTime = time
 
     if (Game.loaded) {
@@ -223,10 +223,6 @@ function animate(time) {
 }
 
 function render() {
-    if (camera) {
-        camera.updateMatrixWorld()
-    }
-
     // raycaster.setFromCamera(mouse, camera)
     // const intersects = raycaster.intersectObjects(scene.children)
     // highlightHoveredObjects(intersects)
@@ -337,7 +333,7 @@ function setUpPostProcessing() {
     const saoPass = new SAOPass(scene, camera, false, true)
     composer.addPass(saoPass)
     saoPass.params.saoScale = 289
-    saoPass.params.saoIntensity = 0.015
+    saoPass.params.saoIntensity = 0.025
     saoPass.params.saoKernelRadius = 16
     saoPass.params.saoBlurRadius = 2.2
     saoPass.params.saoStdDev = 2
