@@ -16,20 +16,50 @@ class Nodie {
 
         return nodie
     }
+
+    static subdivide(nodie) {
+        const node = nodie.node
+        return [
+            node2AbstractCube(node, 0),
+            node2AbstractCube(node, 1),
+            node2AbstractCube(node, 2),
+            node2AbstractCube(node, 3),
+        ].map(abstractCube2Mesh)
+    }
 }
 
-function node2AbstractCube(node) {
+function node2AbstractCube(node, subDSector = -1) {
     const docHeight = document.body.scrollHeight
     const rect = node.getBoundingClientRect() // does this exactly match the rect node-to-image is using?
     const treeDepth = getDepth(node, 1)
     const ELEMENT_DEPTH = 12
 
+    if (subDSector !== -1) {
+        rect.width /= 2
+        rect.height /= 2
+    }
+
+    switch (subDSector) {
+        case 0:
+            break
+        case 1:
+            rect.x += rect.width
+            break
+        case 2:
+            rect.y += rect.height
+            break
+        case 3:
+            rect.x += rect.width
+            rect.y += rect.height
+            break
+    }
+
     const props = {
-        width: node.scrollWidth,
-        height: node.scrollHeight,
+        width: rect.width,
+        height: rect.height,
         depth: ELEMENT_DEPTH,
         x: rect.x,
-        y: docHeight - rect.y - node.scrollHeight,
+        y: docHeight - rect.y - rect.height,
         z: treeDepth * ELEMENT_DEPTH,
         yInverse: rect.y,
         node,
