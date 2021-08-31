@@ -103,7 +103,11 @@ class LilSM {
         if (this.transitioning()) {
             const transition = this.getTransition(this.currentState.name)
             transition.timePassed += deltaTime
-            if (transition.timePassed >= transition.duration) {
+            transition.completionRatio =
+                transition.timePassed / transition.duration
+
+            if (transition.completionRatio >= 1) {
+                transition.completionRatio = 1
                 transition.onExit()
                 this.setCurrentState(transition.final)
             }

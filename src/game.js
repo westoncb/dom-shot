@@ -3,6 +3,9 @@ import Ship from "./ship"
 import DOM3D from "./dom3d"
 import Util from "./util"
 import { Box3, Vector3 } from "three"
+import LilSM from "./lilsm"
+import Cylinder from "./cylinder"
+import Nodie from "./nodie"
 
 const CAM_ROTATION_FROM_VERTICAL = Math.PI / 4.8
 
@@ -17,10 +20,32 @@ class Game {
         this.scene = scene
         this.camera = camera
         this.spotLight = spotLight
+
+        this.buildStateMachine()
+    }
+
+    buildStateMachine() {
+        const states = [
+            {
+                name: "flyover",
+            },
+            {
+                name: "asteroids",
+            },
+        ]
+        const transitions = [
+            {
+                name: "start_asteroids",
+                initial: "flyover",
+                final: "asteroids",
+                duration: 1,
+            },
+        ]
+        this.sm = new LilSM(states, transitions, "flyover", "game_sm")
     }
 
     start() {
-        this.ship = Ship.construct()
+        this.ship = Ship.create()
         this.setUpEvents()
 
         const nodies = DOM3D.constructNodies()
@@ -62,6 +87,10 @@ class Game {
                     this.ship[keyToAttr[key]] = true
                 }
             }
+
+            if (e.key === "k") {
+                this.breakTiles()
+            }
         }
         window.onkeyup = e => {
             for (const key of Object.keys(keyToAttr)) {
@@ -70,6 +99,64 @@ class Game {
                 }
             }
         }
+    }
+
+    breakTiles() {
+        const cylinder = new Cylinder(
+            100,
+            80,
+            new Vector3(0, 0, Game.instance.domBBox.max.z)
+        )
+
+        const nodies = this.getEntitiesWithType("nodie")
+        const intersectedNodies = nodies.filter(n => {
+            const box = new Box3(
+                new Vector3(
+                    -1 + n.obj3d.position.x,
+                    -1 + n.obj3d.position.y,
+                    -1 + n.obj3d.position.z
+                ),
+                new Vector3(
+                    1 + n.obj3d.position.x,
+                    1 + n.obj3d.position.y,
+                    1 + n.obj3d.position.z
+                )
+            )
+            box.expandByObject(n.obj3d)
+            const bSize = new Vector3()
+            box.getSize(bSize)
+            const bCenter = new Vector3()
+            box.getCenter(bCenter)
+            const bPoints = [
+                bCenter,
+                box.min,
+                box.max,
+                box.min.clone().add(new Vector3(bSize.x, 0, 0)),
+                box.min.clone().add(new Vector3(0, bSize.y, 0)),
+                box.min.clone().add(new Vector3(0, 0, bSize.z)),
+                box.max.clone().sub(new Vector3(bSize.x, 0, 0)),
+                box.max.clone().sub(new Vector3(0, bSize.y, 0)),
+                box.max.clone().sub(new Vector3(0, 0, bSize.z)),
+            ]
+            return bPoints.reduce(
+                (accum, point) => accum || cylinder.containsPoint(point),
+                false
+            )
+        })
+        const subdividedNodies = intersectedNodies.reduce(
+            (accum, n) => accum.concat(Nodie.subdivide(n)),
+            []
+        )
+
+        intersectedNodies.forEach(n => this.removeEntity(n))
+        subdividedNodies.forEach(n => {
+            this.addEntity(n)
+            n.sm.transition("ascend")
+        })
+    }
+
+    getEntitiesWithType(type) {
+        return this.entities.filter(e => e.type === type)
     }
 
     addEntity(entity) {

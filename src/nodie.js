@@ -1,30 +1,94 @@
 import * as THREE from "three"
 import Entity from "./entity"
 import Assets from "./assets"
+import { Vector3 } from "three"
+import { nanoid } from "nanoid"
+import LilSM from "./lilsm"
+import Game from "./game"
+import { easeOutQuint, easeOutBack } from "./util"
 
 class Nodie {
-    static create(node) {
+    static create(node, subDSector) {
         const nodie = new Entity("nodie")
+        nodie.id = nanoid()
         nodie.domNode = node
 
         nodie.customInit = () => {
-            const cubeData = node2AbstractCube(node)
-            nodie.obj3d = abstractCube2Mesh(cubeData)
+            if (!nodie.initialized) {
+                const cubeData = node2AbstractCube(node, subDSector)
+                nodie.obj3d = abstractCube2Mesh(cubeData)
+                nodie.initialized = true
+            }
         }
 
-        nodie.customUpdate = deltaTime => {}
+        nodie.sm = Nodie.buildStateMachine(nodie.id)
+
+        nodie.customUpdate = deltaTime => {
+            if (nodie.sm.current().name === "ascend") {
+                if (!nodie.groundPos) {
+                    nodie.groundPos = nodie.obj3d.position.clone()
+                    nodie.ascendPos = nodie.groundPos.clone()
+                    nodie.ascendPos.z = Game.instance.domBBox.max.z + 100
+                }
+
+                nodie.obj3d.position.copy(
+                    nodie.groundPos
+                        .clone()
+                        .addScaledVector(
+                            nodie.ascendPos.clone().sub(nodie.groundPos),
+                            easeOutBack(
+                                Math.pow(
+                                    nodie.sm.current().completionRatio,
+                                    1 / 2
+                                )
+                            )
+                        )
+                )
+            }
+        }
 
         return nodie
     }
 
+    static buildStateMachine(id) {
+        const states = [
+            {
+                name: "flyover",
+            },
+            {
+                name: "asteroids",
+            },
+        ]
+        const transitions = [
+            {
+                name: "ascend",
+                initial: "flyover",
+                final: "asteroids",
+                duration: 0.5,
+            },
+        ]
+        return new LilSM(states, transitions, "flyover", `nodie_${id}_sm`)
+    }
+
     static subdivide(nodie) {
-        const node = nodie.node
-        return [
-            node2AbstractCube(node, 0),
-            node2AbstractCube(node, 1),
-            node2AbstractCube(node, 2),
-            node2AbstractCube(node, 3),
-        ].map(abstractCube2Mesh)
+        const node = nodie.domNode
+        const subs = [
+            Nodie.create(node, 0),
+            Nodie.create(node, 1),
+            Nodie.create(node, 2),
+            Nodie.create(node, 3),
+        ]
+        subs.forEach(s => {
+            s.customInit()
+            s.obj3d.position.add(
+                new Vector3(
+                    Math.random() * 10 - 5,
+                    Math.random() * 10 - 5,
+                    Math.random() * 10 - 5
+                )
+            )
+        })
+        return subs
     }
 }
 
@@ -98,11 +162,13 @@ function abstractCube2Mesh(cube) {
 
     const mesh = new THREE.Mesh(geometry, material)
     mesh.userData.objectType = "nodeTop"
-    mesh.position.x = cube.x + cube.width / 2 - docWidth / 2
-    mesh.position.y = cube.y + cube.height / 2 - docHeight / 2
-    mesh.position.z = cube.z + cube.depth / 2
     mesh.receiveShadow = true
     mesh.castShadow = true
+
+    const position = new Vector3()
+    position.x = cube.x + cube.width / 2 - docWidth / 2
+    position.y = cube.y + cube.height / 2 - docHeight / 2
+    position.z = cube.z + cube.depth / 2
 
     const nCube = {
         x: cube.x / docWidth,
@@ -161,6 +227,7 @@ function abstractCube2Mesh(cube) {
     sideMesh.frustumCulled = false
 
     const group = new THREE.Group()
+    group.position.copy(position)
     group.userData.objectType = "nodieGroup"
     group.add(mesh)
     group.add(sideMesh)
