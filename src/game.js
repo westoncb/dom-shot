@@ -104,52 +104,41 @@ class Game {
     breakTiles() {
         const cylinder = new Cylinder(
             100,
-            80,
+            200,
             new Vector3(0, 0, Game.instance.domBBox.max.z)
         )
 
         const nodies = this.getEntitiesWithType("nodie")
         const intersectedNodies = nodies.filter(n => {
-            const box = new Box3(
-                new Vector3(
-                    -1 + n.obj3d.position.x,
-                    -1 + n.obj3d.position.y,
-                    -1 + n.obj3d.position.z
-                ),
-                new Vector3(
-                    1 + n.obj3d.position.x,
-                    1 + n.obj3d.position.y,
-                    1 + n.obj3d.position.z
-                )
-            )
-            box.expandByObject(n.obj3d)
-            const bSize = new Vector3()
-            box.getSize(bSize)
-            const bCenter = new Vector3()
-            box.getCenter(bCenter)
-            const bPoints = [
-                bCenter,
-                box.min,
-                box.max,
-                box.min.clone().add(new Vector3(bSize.x, 0, 0)),
-                box.min.clone().add(new Vector3(0, bSize.y, 0)),
-                box.min.clone().add(new Vector3(0, 0, bSize.z)),
-                box.max.clone().sub(new Vector3(bSize.x, 0, 0)),
-                box.max.clone().sub(new Vector3(0, bSize.y, 0)),
-                box.max.clone().sub(new Vector3(0, 0, bSize.z)),
-            ]
-            return bPoints.reduce(
+            return Nodie.getBBoxPoints(n).reduce(
                 (accum, point) => accum || cylinder.containsPoint(point),
                 false
             )
         })
-        const subdividedNodies = intersectedNodies.reduce(
-            (accum, n) => accum.concat(Nodie.subdivide(n)),
-            []
+        const subdividedNodies = intersectedNodies
+            .reduce((accum, n) => accum.concat(Nodie.subdivide(n)), [])
+            .filter(n => {
+                return Nodie.getBBoxPoints(n).reduce(
+                    (accum, point) => accum || cylinder.containsPoint(point),
+                    false
+                )
+            })
+
+        console.log(
+            "orig, subd",
+            intersectedNodies.length,
+            subdividedNodies.length
         )
 
         intersectedNodies.forEach(n => this.removeEntity(n))
         subdividedNodies.forEach(n => {
+            n.obj3d.position.add(
+                new Vector3(
+                    Math.random() * 40 - 20,
+                    Math.random() * 40 - 20,
+                    Math.random() * 40 - 20
+                )
+            )
             this.addEntity(n)
             n.sm.transition("ascend")
         })

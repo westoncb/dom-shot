@@ -1,22 +1,27 @@
 import * as THREE from "three"
 import Entity from "./entity"
 import Assets from "./assets"
-import { Vector3 } from "three"
+import { Vector3, Box3 } from "three"
 import { nanoid } from "nanoid"
 import LilSM from "./lilsm"
 import Game from "./game"
-import { easeOutQuint, easeOutBack } from "./util"
+import { easeOutBack } from "./util"
+import isNil from "lodash.isnil"
+
+const MAX_EXTENT = 300
 
 class Nodie {
-    static create(node, subDSector) {
+    static create(node, subDSector, rectBounds) {
         const nodie = new Entity("nodie")
         nodie.id = nanoid()
         nodie.domNode = node
 
+        nodie.rectBounds = rectBounds ?? node.getBoundingClientRect()
+
         nodie.customInit = () => {
             if (!nodie.initialized) {
-                const cubeData = node2AbstractCube(node, subDSector)
-                nodie.obj3d = abstractCube2Mesh(cubeData)
+                const cubeData = node2AbstractCube(nodie, subDSector)
+                nodie.obj3d = abstractCube2Mesh(cubeData, !isNil(subDSector))
                 nodie.initialized = true
             }
         }
@@ -28,7 +33,10 @@ class Nodie {
                 if (!nodie.groundPos) {
                     nodie.groundPos = nodie.obj3d.position.clone()
                     nodie.ascendPos = nodie.groundPos.clone()
-                    nodie.ascendPos.z = Game.instance.domBBox.max.z + 100
+                    nodie.ascendPos.z =
+                        Game.instance.domBBox.max.z +
+                        100 +
+                        (Math.random() * 20 - 10)
                 }
 
                 nodie.obj3d.position.copy(
@@ -72,48 +80,85 @@ class Nodie {
 
     static subdivide(nodie) {
         const node = nodie.domNode
-        const subs = [
-            Nodie.create(node, 0),
-            Nodie.create(node, 1),
-            Nodie.create(node, 2),
-            Nodie.create(node, 3),
-        ]
-        subs.forEach(s => {
+        const rect = nodie.rectBounds ?? node.getBoundingClientRect()
+
+        const out = []
+        if (rect.width > MAX_EXTENT) {
+            out.push(Nodie.create(node, "h0", rect))
+            out.push(Nodie.create(node, "h1", rect))
+        } else if (rect.height > MAX_EXTENT) {
+            out.push(Nodie.create(node, "v0", rect))
+            out.push(Nodie.create(node, "v1", rect))
+        } else {
+            return [nodie]
+        }
+
+        out.forEach(s => {
             s.customInit()
-            s.obj3d.position.add(
-                new Vector3(
-                    Math.random() * 10 - 5,
-                    Math.random() * 10 - 5,
-                    Math.random() * 10 - 5
-                )
-            )
         })
-        return subs
+        return out.reduce((accum, n) => accum.concat(Nodie.subdivide(n)), [])
+    }
+
+    static getBBoxPoints(nodie) {
+        const obj3d = nodie.obj3d
+        const box = new Box3(
+            new Vector3(
+                -1 + obj3d.position.x,
+                -1 + obj3d.position.y,
+                -1 + obj3d.position.z
+            ),
+            new Vector3(
+                1 + obj3d.position.x,
+                1 + obj3d.position.y,
+                1 + obj3d.position.z
+            )
+        )
+        box.expandByObject(obj3d)
+        const bSize = new Vector3()
+        box.getSize(bSize)
+        const bCenter = new Vector3()
+        box.getCenter(bCenter)
+        return [
+            bCenter,
+            box.min,
+            box.max,
+            box.min.clone().add(new Vector3(bSize.x, 0, 0)),
+            box.min.clone().add(new Vector3(0, bSize.y, 0)),
+            box.min.clone().add(new Vector3(0, 0, bSize.z)),
+            box.max.clone().sub(new Vector3(bSize.x, 0, 0)),
+            box.max.clone().sub(new Vector3(0, bSize.y, 0)),
+            box.max.clone().sub(new Vector3(0, 0, bSize.z)),
+        ]
     }
 }
 
-function node2AbstractCube(node, subDSector = -1) {
+function node2AbstractCube(nodie, subDSector = "") {
     const docHeight = document.body.scrollHeight
-    const rect = node.getBoundingClientRect() // does this exactly match the rect node-to-image is using?
-    const treeDepth = getDepth(node, 1)
+    const rect = new DOMRect(
+        nodie.rectBounds.x,
+        nodie.rectBounds.y,
+        nodie.rectBounds.width,
+        nodie.rectBounds.height
+    ) // does this exactly match the rect node-to-image is using?
+    nodie.rectBounds = rect
+    const treeDepth = getDepth(nodie.domNode, 1)
     const ELEMENT_DEPTH = 12
 
-    if (subDSector !== -1) {
+    if (subDSector.startsWith("h")) {
         rect.width /= 2
+    } else if (subDSector.startsWith("v")) {
         rect.height /= 2
     }
 
     switch (subDSector) {
-        case 0:
+        case "h0":
             break
-        case 1:
+        case "h1":
             rect.x += rect.width
             break
-        case 2:
-            rect.y += rect.height
+        case "v0":
             break
-        case 3:
-            rect.x += rect.width
+        case "v1":
             rect.y += rect.height
             break
     }
@@ -126,14 +171,14 @@ function node2AbstractCube(node, subDSector = -1) {
         y: docHeight - rect.y - rect.height,
         z: treeDepth * ELEMENT_DEPTH,
         yInverse: rect.y,
-        node,
+        node: nodie.domNode,
         treeDepth,
     }
 
     return props
 }
 
-function abstractCube2Mesh(cube) {
+function abstractCube2Mesh(cube, subd) {
     const docHeight = document.body.scrollHeight
     const docWidth = document.body.scrollWidth
 
@@ -169,6 +214,11 @@ function abstractCube2Mesh(cube) {
     position.x = cube.x + cube.width / 2 - docWidth / 2
     position.y = cube.y + cube.height / 2 - docHeight / 2
     position.z = cube.z + cube.depth / 2
+
+    if (!subd) {
+        // position.x -=
+        // position.y -= docHeight / 2
+    }
 
     const nCube = {
         x: cube.x / docWidth,
