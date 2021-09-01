@@ -1,6 +1,6 @@
 import { Box3, Vector3 } from "three"
 
-const FRICTION_COEFFICIENT = 0.96
+const DEFAULT_FRICTION_COEFFICIENT = 0.96
 const MAX_VELOCITY = 1600
 
 class Entity {
@@ -14,6 +14,9 @@ class Entity {
         this.direction = new Vector3(0, 1, 0)
         this.angularVelocity = new Vector3()
         this.angle = 0
+
+        // define to override default
+        // this.frictionCoefficient = 0.9
     }
 
     init() {
@@ -36,7 +39,11 @@ class Entity {
 
         // 'friction'
         this.velocity.copy(
-            this.velocity.clone().multiplyScalar(FRICTION_COEFFICIENT)
+            this.velocity
+                .clone()
+                .multiplyScalar(
+                    this.frictionCoeffecient ?? DEFAULT_FRICTION_COEFFICIENT
+                )
         )
 
         this.obj3d.position.add(this.velocity.clone().multiplyScalar(deltaTime))

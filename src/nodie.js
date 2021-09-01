@@ -15,6 +15,7 @@ class Nodie {
         const nodie = new Entity("nodie")
         nodie.id = nanoid()
         nodie.domNode = node
+        nodie.frictionCoeffecient = 1
 
         nodie.rectBounds = rectBounds ?? node.getBoundingClientRect()
 
@@ -26,7 +27,7 @@ class Nodie {
             }
         }
 
-        nodie.sm = Nodie.buildStateMachine(nodie.id)
+        nodie.sm = Nodie.buildStateMachine(nodie)
 
         nodie.customUpdate = deltaTime => {
             if (nodie.sm.current().name === "ascend") {
@@ -35,8 +36,8 @@ class Nodie {
                     nodie.ascendPos = nodie.groundPos.clone()
                     nodie.ascendPos.z =
                         Game.instance.domBBox.max.z +
-                        100 +
-                        (Math.random() * 20 - 10)
+                        102 +
+                        (Math.random() * 2 - 1)
                 }
 
                 nodie.obj3d.position.copy(
@@ -52,19 +53,27 @@ class Nodie {
                             )
                         )
                 )
+            } else if (nodie.sm.current().name === "asteroids") {
             }
         }
 
         return nodie
     }
 
-    static buildStateMachine(id) {
+    static buildStateMachine(nodie) {
         const states = [
             {
                 name: "flyover",
             },
             {
                 name: "asteroids",
+                onEnter: () => {
+                    nodie.velocity = new Vector3(
+                        Math.random(),
+                        Math.random(),
+                        0
+                    ).multiplyScalar(Math.random() * 200 - 100)
+                },
             },
         ]
         const transitions = [
@@ -75,7 +84,7 @@ class Nodie {
                 duration: 0.5,
             },
         ]
-        return new LilSM(states, transitions, "flyover", `nodie_${id}_sm`)
+        return new LilSM(states, transitions, "flyover", `nodie_${nodie.id}_sm`)
     }
 
     static subdivide(nodie) {

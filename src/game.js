@@ -6,6 +6,7 @@ import { Box3, Vector3 } from "three"
 import LilSM from "./lilsm"
 import Cylinder from "./cylinder"
 import Nodie from "./nodie"
+import Arena from "./arena"
 
 const CAM_ROTATION_FROM_VERTICAL = Math.PI / 4.8
 
@@ -31,6 +32,9 @@ class Game {
             },
             {
                 name: "asteroids",
+                onEnter: () => {
+                    this.addEntity(Arena.create(this.domBBox))
+                },
             },
         ]
         const transitions = [
@@ -38,7 +42,7 @@ class Game {
                 name: "start_asteroids",
                 initial: "flyover",
                 final: "asteroids",
-                duration: 1,
+                duration: 0.5,
             },
         ]
         this.sm = new LilSM(states, transitions, "flyover", "game_sm")
@@ -133,15 +137,13 @@ class Game {
         intersectedNodies.forEach(n => this.removeEntity(n))
         subdividedNodies.forEach(n => {
             n.obj3d.position.add(
-                new Vector3(
-                    Math.random() * 40 - 20,
-                    Math.random() * 40 - 20,
-                    Math.random() * 40 - 20
-                )
+                new Vector3(Math.random() * 4 - 2, Math.random() * 4 - 2, 0)
             )
             this.addEntity(n)
             n.sm.transition("ascend")
         })
+
+        this.sm.transition("start_asteroids")
     }
 
     getEntitiesWithType(type) {
@@ -169,7 +171,9 @@ class Game {
 
         if (!orbitControlsOn) {
             const shipMesh = this.ship.obj3d
-            this.cameraPosDest.copy(cameraPosDestFromShipPos(shipMesh.position))
+            this.cameraPosDest.copy(
+                this.cameraPosDestFromShipPos(shipMesh.position)
+            )
             this.camera.position.add(
                 this.cameraPosDest
                     .clone()
@@ -188,12 +192,17 @@ class Game {
             this.spotLight.target = shipMesh
         }
     }
-}
 
-function cameraPosDestFromShipPos(shipPos) {
-    const pos = new Vector3(0, 0, 650)
-    pos.applyAxisAngle(new Vector3(1, 0, 0), CAM_ROTATION_FROM_VERTICAL)
-    return shipPos.clone().add(pos)
+    cameraPosDestFromShipPos(shipPos) {
+        const asteroidsMode = this.sm.current().name === "asteroids"
+        const dist = asteroidsMode ? 850 : 650
+        const pos = new Vector3(0, 0, dist)
+        const rotFromVert = asteroidsMode
+            ? Math.PI / 15
+            : CAM_ROTATION_FROM_VERTICAL
+        pos.applyAxisAngle(new Vector3(1, 0, 0), rotFromVert)
+        return shipPos.clone().add(pos)
+    }
 }
 
 export default Game
