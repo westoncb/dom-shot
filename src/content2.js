@@ -8,6 +8,8 @@ import { SAOPass } from "three/examples/jsm/postprocessing/SAOPass.js"
 import Util from "./util"
 import Game from "./game"
 import LilSM from "./lilsm"
+import css from "./main.css"
+import ParticleSystem from "./particleSystem"
 var OrbitControls = require("three-orbit-controls")(THREE)
 
 window.onload = program
@@ -40,7 +42,12 @@ async function program() {
     if (window.location.href.includes("ycombinator")) {
         launch3dMode()
     } else {
-        addLaunchButton()
+        const runningAsExtension = chrome.runtime
+        if (runningAsExtension) {
+            addLaunchButton()
+        } else {
+            showTestPage()
+        }
     }
 }
 
@@ -55,6 +62,18 @@ function addLaunchButton() {
         launch3dMode()
     }
     document.body.appendChild(btn)
+}
+
+function showTestPage() {
+    initThreeScene()
+    const editorRoot = document.createElement("div")
+    editorRoot.id = "editor-root"
+    document.body.appendChild(editorRoot)
+    editorRoot.innerHTML = `
+        This is a test!
+    `
+
+    animate()
 }
 
 async function launch3dMode() {
@@ -76,6 +95,7 @@ function startGame() {
     activeGame.start()
 }
 
+let ps
 function initThreeScene() {
     scene = new THREE.Scene()
     camera = new THREE.PerspectiveCamera(
@@ -124,20 +144,21 @@ function initThreeScene() {
     document.body.appendChild(renderer.domElement)
 
     directionalLight = new THREE.DirectionalLight(0xffffff, 0.75)
-    directionalLight.position.set(300, -300, 2000)
+    directionalLight.position.set(300, -300, 800)
     directionalLight.target.position.set(0, 0, 0)
     directionalLight.target.updateMatrixWorld()
     directionalLight.castShadow = true
     directionalLight.shadow.mapSize.width = 2048
     directionalLight.shadow.mapSize.height = 2048
     directionalLight.shadow.camera.near = 0.5
-    directionalLight.shadow.camera.far = 2000
+    directionalLight.shadow.camera.far = 3000
     const d = 2000
     directionalLight.shadow.camera.left = -d
     directionalLight.shadow.camera.right = d
     directionalLight.shadow.camera.top = d
     directionalLight.shadow.camera.bottom = -d
     directionalLight.shadow.bias = 0.00001
+    directionalLight.shadow.intensity = 0.2
     // const helper = new THREE.CameraHelper(directionalLight.shadow.camera)
     // scene.add(helper)
 
@@ -175,6 +196,9 @@ function initThreeScene() {
     webglCanvas.style.right = "0"
     webglCanvas.style.bottom = "0"
     webglCanvas.style.top = "0"
+
+    ps = new ParticleSystem()
+    scene.add(ps.getObj3d())
 }
 
 function toggleLoadingUI(on = true) {
@@ -217,6 +241,8 @@ function animate(time) {
         LilSM.globalUpdate(deltaSeconds)
         activeGame.update(deltaSeconds, enableOrbitControls)
     }
+
+    ps.update(deltaSeconds)
 
     render()
     requestAnimationFrame(animate)

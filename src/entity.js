@@ -1,7 +1,7 @@
 import { Box3, Vector3 } from "three"
 
 const DEFAULT_FRICTION_COEFFICIENT = 0.96
-const MAX_VELOCITY = 1600
+const MAX_SPEED = 1600
 
 class Entity {
     constructor(type, bounds, obj3d) {
@@ -17,6 +17,7 @@ class Entity {
 
         // define to override default
         // this.frictionCoefficient = 0.9
+        // this.maxSpeed = 1000
     }
 
     init() {
@@ -31,10 +32,12 @@ class Entity {
         }
 
         this.velocity.add(this.acceleration.clone().multiplyScalar(deltaTime))
+
+        const maxSpeed = this.maxSpeed ?? MAX_SPEED
         this.velocity.set(
-            Math.min(MAX_VELOCITY, this.velocity.x),
-            Math.min(MAX_VELOCITY, this.velocity.y),
-            Math.min(MAX_VELOCITY, this.velocity.z)
+            Math.min(maxSpeed, this.velocity.x),
+            Math.min(maxSpeed, this.velocity.y),
+            Math.min(maxSpeed, this.velocity.z)
         )
 
         // 'friction'

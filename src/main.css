@@ -1,3 +1,7 @@
+body {
+    font-family: Helvetica, Arial, sans-serif;
+}
+
 #ds123-launcher {
     position: fixed;
     top: 15px;
@@ -46,4 +50,16 @@
     color: #999;
     z-index: 9999999999;
     transition: opacity 200ms;
+}
+
+#editor-root {
+    z-index: 99999999999;
+    background-color: rgba(50, 100, 150, 0.75);
+    color: #eee;
+    padding: 1rem;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: 99%;
 }
