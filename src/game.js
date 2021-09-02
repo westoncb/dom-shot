@@ -33,7 +33,8 @@ class Game {
             {
                 name: "asteroids",
                 onEnter: () => {
-                    this.addEntity(Arena.create(this.domBBox))
+                    this.arena = Arena.create(this.domBBox)
+                    this.addEntity(this.arena)
                 },
             },
         ]
@@ -63,6 +64,7 @@ class Game {
         )
 
         Game.instance = this
+        Game.instance.asteroidsPlaneZ = this.domBBox.max.z + 100
 
         this.addEntity(this.ship)
     }
@@ -127,6 +129,14 @@ class Game {
                     false
                 )
             })
+
+        // only keep a fixed number of the largest subdivisions
+        subdividedNodies.sort(
+            (b, a) =>
+                a.rectBounds.width * a.rectBounds.height -
+                b.rectBounds.width * b.rectBounds.height
+        )
+        subdividedNodies.length = Math.min(subdividedNodies.length, 10)
 
         console.log(
             "orig, subd",
@@ -195,7 +205,7 @@ class Game {
 
     cameraPosDestFromShipPos(shipPos) {
         const asteroidsMode = this.sm.current().name === "asteroids"
-        const dist = asteroidsMode ? 850 : 650
+        const dist = asteroidsMode ? 750 : 650
         const pos = new Vector3(0, 0, dist)
         const rotFromVert = asteroidsMode
             ? Math.PI / 15

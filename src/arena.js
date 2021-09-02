@@ -26,7 +26,9 @@ class Arena {
     static createMesh(bbox, entity) {
         const bboxSize = new Vector3()
         bbox.getSize(bboxSize)
-        const geo = new PlaneBufferGeometry(bboxSize.x, bboxSize.y)
+        entity.width = bboxSize.x
+        entity.height = bboxSize.y
+        const geo = new PlaneBufferGeometry(entity.width, entity.height)
 
         // geo.rotateX(Math.PI / 20)
 
@@ -50,6 +52,7 @@ class Arena {
         mesh.position.z = bbox.max.z + 100
 
         geo.computeBoundingBox()
+        entity.boundingBox = geo.boundingBox
 
         console.log(mesh)
 

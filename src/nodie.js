@@ -1,14 +1,15 @@
 import * as THREE from "three"
 import Entity from "./entity"
 import Assets from "./assets"
-import { Vector3, Box3 } from "three"
+import { Vector3, Vector2, Box3, Box2 } from "three"
 import { nanoid } from "nanoid"
 import LilSM from "./lilsm"
 import Game from "./game"
-import { easeOutBack } from "./util"
+import { boundingSphereForObj3d, easeOutBack, obj3dIntersection } from "./util"
 import isNil from "lodash.isnil"
 
 const MAX_EXTENT = 300
+const MAX_SPEED = 100
 
 class Nodie {
     static create(node, subDSector, rectBounds) {
@@ -16,6 +17,7 @@ class Nodie {
         nodie.id = nanoid()
         nodie.domNode = node
         nodie.frictionCoeffecient = 1
+        nodie.maxSpeed = 100
 
         nodie.rectBounds = rectBounds ?? node.getBoundingClientRect()
 
@@ -23,6 +25,8 @@ class Nodie {
             if (!nodie.initialized) {
                 const cubeData = node2AbstractCube(nodie, subDSector)
                 nodie.obj3d = abstractCube2Mesh(cubeData, !isNil(subDSector))
+                nodie.boundingBox = new Box3()
+                nodie.boundingBox.expandByObject(nodie.obj3d)
                 nodie.initialized = true
             }
         }
@@ -53,7 +57,76 @@ class Nodie {
                             )
                         )
                 )
+
+                const shipMesh = Game.instance.ship.obj3d
+                const intersection = obj3dIntersection(
+                    shipMesh,
+                    nodie.obj3d,
+                    true
+                )
+
+                if (intersection !== null) {
+                    nodie.velocity.add(
+                        intersection
+                            .clone()
+                            .normalize()
+                            .multiplyScalar(
+                                Math.min(nodie.velocity.length() * 2, 100)
+                            )
+                    )
+                }
             } else if (nodie.sm.current().name === "asteroids") {
+                const shipMesh = Game.instance.ship.obj3d
+                const intersection = obj3dIntersection(
+                    shipMesh,
+                    nodie.obj3d,
+                    true
+                )
+
+                if (intersection !== null) {
+                    nodie.velocity.add(
+                        intersection
+                            .clone()
+                            .normalize()
+                            .multiplyScalar(
+                                Math.min(nodie.velocity.length() * 2, 100)
+                            )
+                    )
+                }
+
+                const arenaBox = new Box2(
+                    Game.instance.arena.boundingBox.min,
+                    Game.instance.arena.boundingBox.max
+                )
+                const tempBox = nodie.boundingBox
+                    .clone()
+                    .translate(nodie.obj3d.position)
+                const nodieBox = new Box2(tempBox.min, tempBox.max)
+
+                if (
+                    nodieBox.max.x > arenaBox.max.x ||
+                    nodieBox.max.y > arenaBox.max.y ||
+                    nodieBox.min.x < arenaBox.min.x ||
+                    nodieBox.min.y < arenaBox.min.y
+                ) {
+                    const edgeIntersection = nodieBox
+                        .clone()
+                        .intersect(arenaBox)
+
+                    const c1 = new Vector2()
+                    const c2 = new Vector2()
+                    edgeIntersection.getCenter(c1)
+                    nodieBox.getCenter(c2)
+                    const wallNormal = c2.clone().sub(c1).normalize()
+                    const nodieVol = new Vector3(
+                        nodie.velocity.x,
+                        nodie.velocity.y,
+                        0
+                    )
+                    nodieVol.reflect(new Vector3(wallNormal.x, wallNormal.y, 0))
+                    nodie.velocity.x = nodieVol.x
+                    nodie.velocity.y = nodieVol.y
+                }
             }
         }
 
@@ -217,7 +290,7 @@ function abstractCube2Mesh(cube, subd) {
     const mesh = new THREE.Mesh(geometry, material)
     mesh.userData.objectType = "nodeTop"
     mesh.receiveShadow = true
-    mesh.castShadow = true
+    mesh.castShadow = false
 
     const position = new Vector3()
     position.x = cube.x + cube.width / 2 - docWidth / 2
@@ -289,6 +362,13 @@ function abstractCube2Mesh(cube, subd) {
     group.position.copy(position)
     group.userData.objectType = "nodieGroup"
     group.add(mesh)
+    const mesh2 = mesh.clone()
+    mesh2.material = new THREE.MeshBasicMaterial(0x333333)
+    mesh2.castShadow = true
+    mesh2.receiveShadow = false
+    mesh2.material.side = THREE.BackSide
+    mesh2.position.z -= cube.depth
+    group.add(mesh2)
     group.add(sideMesh)
 
     return group

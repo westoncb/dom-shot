@@ -1,8 +1,9 @@
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader"
-import { Box3, Vector3 } from "three"
+import { Box3, Sphere, Vector3 } from "three"
 import Entity from "./entity"
 import Assets from "./assets"
 import Game from "./game"
+import { boundingSphereForObj3d } from "./util"
 
 const ACCELERATION_MAGNITUTE = 1200
 
@@ -19,10 +20,22 @@ class Ship {
             ship.obj3d = Assets.get("shipMesh").clone()
 
             // position the ship at the highest extent of the 3d DOM's bbox
-            ship.obj3d.position.z = Game.instance.domBBox.max.z
+            ship.groundZ = Game.instance.domBBox.max.z
+            ship.obj3d.position.z = ship.groundZ
+            ship.boundingSphere = boundingSphereForObj3d(ship.obj3d)
         }
 
         ship.customUpdate = deltaTime => {
+            const state = Game.instance.sm.current()
+            if (state.name === "start_asteroids") {
+                const targetZ = Game.instance.asteroidsPlaneZ
+                ship.obj3d.position.z =
+                    ship.groundZ +
+                    (targetZ - ship.groundZ) * state.completionRatio
+
+                console.log("t", state.completionRatio)
+            }
+
             if (ship.thrusting || ship.reversing) {
                 ship.acceleration.copy(
                     ship.direction
