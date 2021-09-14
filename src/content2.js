@@ -1,6 +1,13 @@
 import regeneratorRuntime from "regenerator-runtime" // needed for async/await
 import * as THREE from "three"
-import { Box3, Quaternion, Vector3 } from "three"
+import {
+    Box3,
+    BoxGeometry,
+    Mesh,
+    MeshBasicMaterial,
+    Quaternion,
+    Vector3,
+} from "three"
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js"
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js"
 import { SAOPass } from "three/examples/jsm/postprocessing/SAOPass.js"
@@ -39,10 +46,13 @@ const raycaster = new THREE.Raycaster()
 let activeGame
 
 async function program() {
+    console.log("testblah")
+
     if (window.location.href.includes("ycombinator")) {
         launch3dMode()
     } else {
         const runningAsExtension = chrome.runtime
+        console.log("test", runningAsExtension)
         if (runningAsExtension) {
             addLaunchButton()
         } else {
@@ -199,6 +209,12 @@ function initThreeScene() {
 
     ps = new ParticleSystem()
     scene.add(ps.getObj3d())
+
+    // const m = new Mesh(
+    //     new BoxGeometry(50, 50, 50),
+    //     new MeshBasicMaterial({ color: "red" })
+    // )
+    // scene.add(m)
 }
 
 function toggleLoadingUI(on = true) {

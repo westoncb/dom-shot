@@ -24,32 +24,43 @@ const sv3 = new Vector3()
 
 const defaultConfig = {
     particleCount: 100, // start generator properties
-    minSpawnRate: 10,
-    maxSpawnRate: 20,
-    minSpawnSpeed: 5, // start particle properties
-    maxSpawnSpeed: 20,
-    minSpawnDirection: new Vector3(0, 1, 0),
-    maxSpawnDirection: new Vector3(0, 1, 0),
+    minSpawnRate: 4,
+    maxSpawnRate: 6,
+    minSpawnSpeed: 60, // start particle properties
+    maxSpawnSpeed: 90,
+    minSpawnDirection: new Vector3(-0.9, 0, 0),
+    maxSpawnDirection: new Vector3(0.9, 0, 0),
     minDeathDirection: new Vector3(0, 1, 0),
-    maxDeathDirection: new Vector3(0, 1, 0),
-    minAccel: 2,
-    maxAccel: 3,
-    minLifetime: 0.5,
-    maxLifetime: 2,
+    maxDeathDirection: new Vector3(1, 0, 0),
+    minAccel: 70,
+    maxAccel: 85,
+    minLifetime: 2,
+    maxLifetime: 8,
+    spawnOpacity: 1,
+    deathOpacity: 0,
     spawnColorA: new Color("#ff2299"),
-    spawnColorB: new Color("#9922ff"),
+    spawnColorB: new Color("#99ffff"),
     deathColorA: new Color("#22ff44"),
     deathColorB: new Color("#44ff22"),
-    spawnSizeA: new Vector2(80, 80),
+    spawnSizeA: new Vector2(70, 70),
     spawnSizeB: new Vector2(100, 100),
-    deathSizeA: new Vector2(20, 20),
-    deathSizeB: new Vector2(40, 40),
+    deathSizeA: new Vector2(0, 0),
+    deathSizeB: new Vector2(5, 5),
     colorFunc: t => {
         scratchColor.setRGB(0.1, 0.9, 0.3)
         return scratchColor
     },
     sizeFunc: t => {
         return 1
+    },
+    opacityFunc: t => {
+        if (t < 0.1) {
+            return easeInOutSine(t * 10)
+        } else if (t > 0.1 && t < 0.7) {
+            return 1
+        } else {
+            return easeInOutSine((1 - t) * (1 / 0.3))
+        }
     },
 }
 
@@ -71,15 +82,15 @@ class ParticleSystem {
         this.colors.fill(0, 0, particleCount * 4)
         this.sizes.fill(0, 0, particleCount * 2)
         this.positions.fill(0, 0, particleCount * 3)
-        this.particleConfigs.fill({}, 0, particleCount)
-        this.particleProps.fill({}, 0, particleCount)
+        for (let i = 0; i < particleCount; i++) {
+            this.particleConfigs[i] = {}
+            this.particleProps[i] = {}
+        }
 
         this.geo = new BufferGeometry()
         this.geo.setAttribute(
             "position",
-            new Float32BufferAttribute(this.positions, 3).setUsage(
-                DynamicDrawUsage
-            )
+            new Float32BufferAttribute(this.positions, 3)
         )
         this.geo.setAttribute(
             "color",
@@ -98,14 +109,12 @@ class ParticleSystem {
             fragmentShader ?? ParticleSystem.getDefaultFragShader()
 
         const shaderMaterial = new ShaderMaterial({
-            uniforms: this.uniforms,
             vertexShader: ParticleSystem.getVertexShader(),
             fragmentShader: ParticleSystem.getFragmentShader(userFragShader),
 
-            blending: AdditiveBlending,
+            // blending: AdditiveBlending,
             depthTest: false,
             transparent: true,
-            vertexColors: true,
         })
 
         this.obj3d = new Points(this.geo, shaderMaterial)
@@ -137,9 +146,6 @@ class ParticleSystem {
             this.setNextSpawnDelay()
             this.timeSinceSpawn = 0
             const id = this.spawnParticle()
-            if (id < 5 && id > -1) {
-                console.log("spawning!", this.particleConfigs[id])
-            }
         }
     }
 
@@ -163,9 +169,9 @@ class ParticleSystem {
     updateParticle(index, deltaTime) {
         const pc = this.particleConfigs[index]
         const pprops = this.particleProps[index]
-        const positions = this.positions
-        const colors = this.colors
-        const sizes = this.sizes
+        const positions = this.obj3d.geometry.attributes.position.array
+        const colors = this.obj3d.geometry.attributes.color.array
+        const sizes = this.obj3d.geometry.attributes.size.array
         const completion = (this.elapsedTime - pprops.birthTime) / pc.lifetime
 
         if (index === 1) {
@@ -191,11 +197,7 @@ class ParticleSystem {
         )
         pprops.speed += pc.accel * deltaTime
         const velocity = sv1.copy(direction).multiplyScalar(pprops.speed)
-        const position = sv2.set(
-            positions[index * 3 + 0],
-            positions[index * 3 + 1],
-            positions[index * 3 + 2]
-        )
+        const position = pprops.position
         position.addScaledVector(velocity, deltaTime)
         positions[index * 3 + 0] = position.x
         positions[index * 3 + 1] = position.y
@@ -209,6 +211,10 @@ class ParticleSystem {
         sizes[index * 2 + 0] = size.x
         sizes[index * 2 + 1] = size.y
 
+        if (index === 1) {
+            // console.log("X", this.config.opacityFunc(completion))
+        }
+
         const color = pprops.color.lerpColors(
             pc.spawnColor,
             pc.deathColor,
@@ -217,7 +223,7 @@ class ParticleSystem {
         colors[index * 4 + 0] = color.r
         colors[index * 4 + 1] = color.g
         colors[index * 4 + 2] = color.b
-        colors[index * 4 + 2] = color.a
+        colors[index * 4 + 3] = this.config.opacityFunc(completion)
 
         this.obj3d.geometry.attributes.size.needsUpdate = true
         this.obj3d.geometry.attributes.color.needsUpdate = true
@@ -237,6 +243,7 @@ class ParticleSystem {
             c.minDeathDirection,
             c.maxDeathDirection
         )
+        // console.log(pc.spawnDirection)
         pc.accel = rand(c.minAccel, c.maxAccel)
         pc.lifetime = rand(c.minLifetime, c.maxLifetime)
         pc.spawnColor = colorBetween(c.spawnColorA, c.spawnColorB)
@@ -252,6 +259,7 @@ class ParticleSystem {
         this.particleProps[index].direction = pc.spawnDirection.clone()
         this.particleProps[index].color = pc.spawnColor.clone()
         this.particleProps[index].size = pc.spawnSize.clone()
+        this.particleProps[index].position = new Vector3() // should generate with possible offset radius
     }
 
     nextFreeIndex() {
@@ -264,8 +272,6 @@ class ParticleSystem {
         return -1
     }
 
-    kill(index) {}
-
     setNextSpawnDelay() {
         this.spawnDelay =
             1 / rand(this.config.minSpawnRate, this.config.maxSpawnRate)
@@ -275,33 +281,40 @@ class ParticleSystem {
         return `
             void main() {
 
-				gl_FragColor = vColor;
+                float l = length(vPos);
+				gl_FragColor = vec4(vColor.r, vColor.g, vColor.b, vColor.a);
 			}
         `
     }
 
     static getFragmentShader(userPart) {
         return `
+            varying vec2 vUv;
+            varying vec3 vPos;
 			varying vec4 vColor;
 
 			${userPart}
-
 			`
     }
 
     static getVertexShader() {
         return `
-            attribute float size;
-
+            attribute vec2 size;
+            attribute vec4 color;
+            
+            varying vec2 vUv;
+            varying vec3 vPos;
 			varying vec4 vColor;
 
 			void main() {
 
 				vColor = color;
+                vUv = uv;
+                vPos = position;
 
 				vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
 
-				gl_PointSize = size * ( 300.0 / -mvPosition.z );
+				gl_PointSize = size.x;
 
 				gl_Position = projectionMatrix * mvPosition;
 

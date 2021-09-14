@@ -82,6 +82,7 @@ export function colorBetween(colorA, colorB) {
     c.r = rand(colorA.r, colorB.r)
     c.g = rand(colorA.g, colorB.g)
     c.b = rand(colorA.b, colorB.b)
+    c.a = rand(colorA.a, colorB.a)
 
     return c
 }
@@ -96,14 +97,16 @@ export function vectorBetween2d(vecA, vecB) {
 
 export function vectorRotatedBetween(vecA, vecB) {
     const angle = vecA.angleTo(vecB)
+    const axis = vecB.cross(vecA).normalize()
 
     if (angle === 0) {
         return vecA.clone()
     }
 
+    // console.log(angle, axis)
+
     const randAngle = rand(0, angle)
-    const alpha = randAngle / angle
-    return vecA.clone().lerp(vecB, alpha)
+    return vecA.clone().applyAxisAngle(axis, randAngle)
 }
 
 export default Util
