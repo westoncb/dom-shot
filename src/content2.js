@@ -207,8 +207,9 @@ function initThreeScene() {
     webglCanvas.style.bottom = "0"
     webglCanvas.style.top = "0"
 
-    ps = new ParticleSystem()
-    scene.add(ps.getObj3d())
+    // This is for testing the particle system
+    // ps = new ParticleSystem()
+    // scene.add(ps.getObj3d())
 
     // const m = new Mesh(
     //     new BoxGeometry(50, 50, 50),
