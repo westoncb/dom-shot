@@ -46,18 +46,11 @@ const raycaster = new THREE.Raycaster()
 let activeGame
 
 async function program() {
-    console.log("testblah")
-
-    if (window.location.href.includes("ycombinator")) {
-        launch3dMode()
+    const runningAsExtension = chrome.runtime
+    if (runningAsExtension) {
+        addLaunchButton()
     } else {
-        const runningAsExtension = chrome.runtime
-        console.log("test", runningAsExtension)
-        if (runningAsExtension) {
-            addLaunchButton()
-        } else {
-            showTestPage()
-        }
+        showTestPage()
     }
 }
 
@@ -208,7 +201,7 @@ function initThreeScene() {
     webglCanvas.style.top = "0"
 
     // This is for testing the particle system
-    // ps = new ParticleSystem()
+    ps = new ParticleSystem()
     // scene.add(ps.getObj3d())
 
     // const m = new Mesh(
